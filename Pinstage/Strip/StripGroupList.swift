@@ -461,8 +461,8 @@ private struct GroupIconTile: View {
     }
 }
 
-/// グループの中身のアプリのアイコンを、少し重ねて並べる（大きさが「小」のとき）
-private struct MemberIcons: View {
+/// グループの中身のアプリのアイコンを、少し重ねて並べる（大きさが「小」のとき。スイッチャーの下の帯でも使う）
+struct MemberIcons: View {
     let members: [WindowSignature]
     let running: Set<String>
     var memberDrag: MemberDragContext?

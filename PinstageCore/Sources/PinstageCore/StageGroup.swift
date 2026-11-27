@@ -267,6 +267,12 @@ extension StageLibrary {
         return true
     }
 
+    /// グループに、いくつかの中身をまとめて足す（もう入っているもの・重なったものは足さない。運んだ順）。足した数を返す
+    @discardableResult
+    public mutating func addMembers(_ members: [WindowSignature], toGroup id: UUID) -> Int {
+        members.filter { addMember($0, toGroup: id) }.count
+    }
+
     /// グループから中身を外す。外したものを返す
     @discardableResult
     public mutating func removeMember(at memberIndex: Int, fromGroup id: UUID) -> WindowSignature? {

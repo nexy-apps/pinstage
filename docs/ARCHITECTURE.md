@@ -37,7 +37,7 @@ Pinstage/
 │   ├── DockBadges            Dock のアイコンの標準のバッジを読む（Dock のアクセシビリティの情報 AXStatusLabel。アプリが絵に描いた印は読めない）
 │   ├── ThumbnailStore        ウインドウバー・切り替え画面で共有するサムネイル（ScreenCaptureKit。画面収録の許可）
 │   ├── DesktopPicker         ウインドウスイッチャー（一覧の組み立て、パネルの出し入れ、キー操作）
-│   ├── DesktopPickerView     一覧・アイコン・サムネイルの表示と、ボタンから出したときの矢印
+│   ├── DesktopPickerView     一覧・アイコン・サムネイルの表示と、ボタンから出したときの矢印。項目のドラッグ・下の帯の落とす先（ステージ・グループ）・ポインタについて動く見本
 │   ├── DesktopPickerThumbnails  見えているカードだけ撮り、パネルを閉じたら仕事をやめる
 │   ├── StripAvoider          ウインドウの知らせ（AXObserver）を受け、常に出しているウインドウバーの後ろに入り込んだら戻す。開いた・閉じた・しまわれた・戻された・アプリを隠した・終了した知らせで、すぐ一覧を読み直させる（1.5 秒ごとの読み直しを待たない）
 │   ├── CurrentSpace          いま見ているデスクトップ（操作スペース）にあるウインドウを見分ける（画面に出ているウインドウの一覧と照らし合わせる）。同じ 1 回の一覧から、どのウインドウバーが画面に出ているかも読む
@@ -62,7 +62,7 @@ Pinstage/
 │   ├── StripRowCluster       同じアプリのウインドウのまとまり（となり合った行を、うすい枠でつなぐ。RowJoin・ClusterTray。アイコンの格子では、列の数から折り返しを決め、タイルの間まで枠を伸ばす）
 │   ├── StripGroupList        グループの一覧と行（見本・アイコンだけのときの形・右クリックのメニュー）
 │   ├── GroupMap              グループの見本（枠ごとに、入るアプリのアイコン）。枠の番号ごとの色（SlotPalette）。グループの編集画面でも使う
-│   ├── StripReorder          クリックかドラッグかの見分け（TapOrDrag）・行をドラッグして並べ替える（ReorderDrag・落とす位置の線。同じアプリのまとまりは一緒に動かす。行の枠は、ずらし（offset）の外側で測る）
+│   ├── StripReorder          クリックかドラッグかの見分け（TapOrDrag。ウインドウスイッチャーの項目でも使う）・行をドラッグして並べ替える（ReorderDrag・落とす位置の線。同じアプリのまとまりは一緒に動かす。行の枠は、ずらし（offset）の外側で測る）
 │   ├── GroupMemberDrag       見本のアイコンをドラッグして、グループから外す・移す・並び順を変える（GroupDropTargets・MemberDrag）
 │   ├── StripLayoutControls   上の帯の並べ方のボタン（型・型を作る）と、グループを作る ＋（ステージを保存・見えている画面を記録）
 │   ├── StripStyle            ウインドウバーの見た目の共通の部品（上の帯・アイコンのボタン・見出し・検索の欄・欄の地）
@@ -122,6 +122,7 @@ PinstageCore/       画面に依存しないロジック（Swift パッケージ
 ├── GroupDesktops              グループを出すデスクトップを、メンバーのいる所に合わせる決まり（MemberDesktop・GroupDesktopRule）・分かれたときの印と外すメンバー（GroupDesktopStatus）・
 │                              行き先が落ち着くまで待つ仕組み（DesktopFollowStabilizer）・ついていく・まとめて外す（StageLibrary.followDesktop・removeMembers）
 ├── GroupDissolution           メンバーを書き換えて 1 つ以下になったグループを解消する決まり（GroupMemberEdit。複数のグループもまとめて）・確かめの文・確かめるかの設定
+├── WindowSwitcherDrag         ウインドウスイッチャーのドラッグの決まり（つかめるか・運ぶ組み合わせ WindowSwitcherDragRules・落とせる先か WindowSwitcherDrop）。グループにまとめて足すのは StageLibrary.addMembers（StageGroup）
 ├── StageGroup                 グループとその中身（StageGroup.Content）・出すデスクトップの決まり（isShown）・保存する中身（StageLibrary）とその書き換え（足す・中身の入れ替え・名前・並べ替え・型の登録と削除）・JSON ファイルへの読み書き
 ├── ScreenCoordinates          AppKit（左下が原点）とアクセシビリティの API（左上が原点）の座標の変換
 ├── GroupNaming                グループ・型の仮の名前
@@ -203,6 +204,15 @@ Makefile            ビルド・起動・テスト・インストール・配布
 - **デスクトップ別の切り替え一覧**：分類時に読んだデスクトップとウインドウの所属を使い、`DesktopWindowList` で所属ごとに分ける。ショートカットからも、ウインドウバーのボタンからも、同じ切り替え画面（全体）を、前面アプリを変えない `KeyboardPanel` で、そのディスプレイの真ん中に出す。ボタンから開いたときは、押したデスクトップの最初のウインドウを選んでおく（`DesktopPickerModel(focusing:)`）。確定時だけ、ほかのデスクトップにも対応した既存のフォーカス処理で前に出し、ステージへの配置処理は呼ばない。デスクトップの所属と順番は `StageController.desktopListGroups` で一度決める。スイッチャーの「デスクトップ別」ではグループを名前付きの枠で表示し、開いたディスプレイの枠とその現在のデスクトップを先頭にする。メインのバーに複数ディスプレイの個別ボタンを出すときも同じグループ情報を使い、個別ボタンの領域は `StripDesktopButtonLayout` で計算する。所属不明のウインドウはディスプレイの枠の外に並べる
 - **切り替え画面の操作**：初期設定ではショートカットに登録された修飾キーを覚え、`KeyboardPanel` に届くキーの変化を `WindowSwitcherRelease` で受け、すべて離したときに一度だけ確定する。表示までに離していたら、表示直後の確認で確定する。確定方法を「Enter」にした場合と、ウインドウバーのボタンから開いた場合は、自動確定を待たない。ショートカットで開いている間、同じショートカットを押すと確定方法にかかわらず次へ進む。文字は絞り込み（`WindowSwitcherFilter`。検索と同じ `SearchMatcher`）、スペースは並べる候補（いまのデスクトップのウインドウだけ。↩ で `StageController.present`）
 - **アプリのバッジ**：`DockBadges` は標準の `AXStatusLabel` を読み、`PublishedAppBadges` は置き場（`Application Support/Pinstage/BadgeSources`）にある `<バンドル ID>.json` を、相手のアプリを名指しせずに全部読む（形式は [BADGES.md](BADGES.md)）。有効な連携データ（空配列も含む）を優先し、なければ標準に戻す。起動中のアプリとファイルを照合し、2 秒に 1 回まで。バッジのデータは `AppIconBadge`、アイコンとバッジの描画は `WindowAppIcon` を両方の画面で共有する。アイコンの右下は「すべてのデスクトップ」の印に使う
+- **スイッチャーのドラッグ＆ドロップ**：落とす先はスイッチャーの中（下の帯）だけなので、システムのドラッグ＆ドロップ（NSDraggingSession・onDrag）は使わず、
+  項目の DragGesture（スイッチャー全体の座標 `DesktopPickerDrop.space`）で動きを追い、下の帯が覚えた枠で落とす先を決める（「ステージ」は `stageDropFrame`、
+  グループはウインドウバーと同じ `GroupDropTargets`。スクロールで見えている範囲だけ）。
+  項目は Button をやめ、4pt より動かさずに離したらクリック（ウインドウバーの行と同じ `TapOrDrag`。途中で終わったジェスチャーの後始末もここ）。つかめるか・運ぶ組み合わせ・落とせる先かは PinstageCore の `WindowSwitcherDragRules`・`WindowSwitcherDrop`
+  （スペースの印と同じく、いまのデスクトップのウインドウ `StageController.currentSpaceIDs` だけ。ウインドウで見分けるので、すべてのデスクトップのウインドウは欄が違っても 1 つ）。
+  ステージに落としたら `stage.present`（↩ と同じ）、グループなら `addWindows`。スイッチャーの中でマウスを押したら（項目・ドラッグ・右上の切り替えなど）、
+  修飾キーを離して決める待ちをやめる（パネルの外のクリックを見ているローカルモニターで拾い、`DesktopPickerModel.noteMouseDown` → `WindowSwitcherRelease.cancel`。入口ごとには書かない）。
+  1 回のドラッグは `DesktopPickerDragSession`（運ぶもの・位置・ポインタの下の先。モデルとは別の @Observable）にまとめ、始めたとき・終えたときだけモデルの `drag` が変わる。
+  位置はポインタについて動く見本だけが、ポインタの下の先は下の帯の落とす先ごとの部品だけが読む（動かすたびに一覧全体を描き直さないように）
 - **ショートカットの切り替え画面の設定**：`WindowSwitcherSettings` のグループ分け・見た目・大きさは独立し、ウインドウバーのボタンから開いたときにも同じ表示を使う（初期設定はデスクトップ別・アイコンだけ）。画面の高さと列数は中身に合わせる（`WindowSwitcherLayout`。ビューも同じ寸法で描く）。サムネイルを選ぶときは設定画面とスイッチャーで保存・許可確認の処理を共有する。切り替え画面の中でも変えられ（右上の切り替え・⌘G・⌘1〜3）、変えた値はそのまま設定に残す。表示を変えたら、パネルを中身に合う大きさにし、列の数を合わせ、選んでいるウインドウを探し直して保つ（`DesktopPickerModel.setGrouping`・`setAppearance`）。まとめて表示するときは `WindowFocusHistory`（起動中に観測したフォーカス）で順番を決め、同じウインドウは一度だけ出す。サムネイルは既存の画像を再利用し、足りないものは画面内のカードから非同期で撮影する。閉じたら撮影の処理をキャンセルする
 - **外で前に出したウインドウに選択を合わせる**：`StripAvoider` の受け取り口で、前面アプリの切り替え（NSWorkspace）とアプリ内のフォーカスの変更（AXObserver）を拾う。デスクトップの切り替えや定期的な読み直しでも確かめる。前面アプリのフォーカスが、画面に出ているウインドウバーの対象に変わったら、`StageBoard.followFocus` で選択だけを更新する。組み合わせ内ならそのまま。組み合わせ外ならそのウインドウだけを選び、位置・大きさ・並べ方は変えない。Pinstage が並べて前に出す間は、途中のフォーカス変更で選択を崩さない
 - **型とグループを分ける**：型は並べ方の形だけ（どのアプリかは覚えない）。グループは「どのウインドウを、どの型で、どのディスプレイに」並べるか

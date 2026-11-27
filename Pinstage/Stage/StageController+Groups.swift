@@ -17,11 +17,15 @@ extension StageController {
     }
 
     /// そのディスプレイで、いま表に出ているデスクトップの UUID（保存したグループは、このデスクトップのウインドウバーに出す。分からなければ nil で、すべてのデスクトップ）
+    /// 保存する値なので、覚えておいた一覧ではなく、いまの一覧を読み直して決める（切り替えた直後に保存しても、前のデスクトップにならないように）
     private func currentDesktopID(on screen: NSScreen) -> String? {
-        guard SkyLight.isAvailable, let displays = SkyLight.displays(),
-              let display = SkyLight.display(forKey: Self.displayKey(screen), in: displays)
-        else { return nil }
-        return display.spaces.first { $0.id == display.current }?.uuid
+        Self.currentSpace(on: screen, in: SkyLight.isAvailable ? SkyLight.displays() : nil)?.uuid
+    }
+
+    /// そのディスプレイで、いま表に出ているデスクトップ（デスクトップの一覧から引く。分からなければ nil）
+    private static func currentSpace(on screen: NSScreen, in displays: [SkyLight.Display]?) -> SkyLight.Space? {
+        guard let displays, let display = SkyLight.display(forKey: displayKey(screen), in: displays) else { return nil }
+        return display.spaces.first { $0.id == display.current }
     }
 
     /// デスクトップの番号から、その UUID（グループを出すデスクトップとして覚える値。分からなければ nil）
@@ -127,8 +131,16 @@ extension StageController {
 
     /// ウインドウをグループに足す（ウインドウの行をグループの行の上で離した）
     func addWindow(_ item: WindowItem, toGroup id: UUID) {
-        guard let signature = item.signature else { return }
-        editLibrary { $0.addMember(signature, toGroup: id) }
+        addWindows([item], toGroup: id)
+    }
+
+    /// ウインドウをまとめてグループに足す（スイッチャーで、印の付いたものをグループへ落とした）。
+    /// もう入っているもの・手がかりのないものは足さない。足した数を返す
+    @discardableResult
+    func addWindows(_ items: [WindowItem], toGroup id: UUID) -> Int {
+        let signatures = items.compactMap(\.signature)
+        guard !signatures.isEmpty else { return 0 }
+        return editLibrary { $0.addMembers(signatures, toGroup: id) }
     }
 
     /// グループから中身を外す（見本のアイコンを、グループの行の外で離した）。1 つ以下になるなら、解消するか確かめる
@@ -297,6 +309,12 @@ extension StageController {
         let desktop = desktopID(of: space)
         let known = Set(desktopUUIDs.values)
         return byDisplay.filter { $0.isShown(onDesktop: desktop, knownDesktops: known) }
+    }
+
+    /// そのディスプレイで、いま表に出ているデスクトップの番号（分からなければ nil。スイッチャーに、そのウインドウバーと同じグループを出すため）
+    /// 画面を描くたびに呼ぶので、読み直しのときに覚えた一覧から引く
+    func currentSpace(on screen: NSScreen) -> UInt64? {
+        Self.currentSpace(on: screen, in: desktopDisplays)?.id
     }
 
     /// グループをドラッグで並べ替える（ショートカットの番号も変わる）

@@ -47,6 +47,17 @@ final class DesktopPickerModel {
     private(set) var query = ""
     /// スペースで選んだウインドウ（↩ で、まとめてステージに並べる。選んだ順）
     private(set) var marked: [AXUIElement] = []
+    /// いまのドラッグ（運んでいないときは nil。始めたとき・終えたときだけ変わる）
+    private(set) var drag: DesktopPickerDragSession?
+    /// 足したことが分かるように、一瞬光らせるグループ
+    private(set) var flashingGroup: UUID?
+    /// 下の行に出す、ドラッグの知らせ（グループに足した・運べない）。キーを押すか、次のドラッグで消す
+    private(set) var dragNotice: String?
+    /// 下の帯の「ステージ」の枠（DesktopPickerDrop.space の座標。下の帯が描いたときに覚える）
+    @ObservationIgnored var stageDropFrame: CGRect?
+    /// 下の帯のグループの枠と、グループの欄の見えている範囲（ウインドウバーと同じ当たり判定。スクロールで隠れたグループには落とさない）
+    @ObservationIgnored let groupTargets = GroupDropTargets()
+    @ObservationIgnored private var flashTask: Task<Void, Never>?
     var onClose: () -> Void = {}
     /// 表示（グループ分け・見た目・大きさ・絞り込み）を変えたとき（パネルを、中身に合う大きさにする）
     var onLayoutChange: () -> Void = {}
@@ -180,7 +191,8 @@ final class DesktopPickerModel {
             titledSections: sections.contains { !$0.title.isEmpty }, columns: columns,
             maximumHeight: (visible.height * WindowSwitcherLayout.maximumHeightShare).rounded(.down),
             displayGroupCount: displayCount,
-            showsNotice: isMissingThumbnailPermission
+            showsNotice: isMissingThumbnailPermission,
+            showsDropBar: stage.isTrusted
         )
         return CGSize(width: width, height: height)
     }
@@ -221,11 +233,11 @@ final class DesktopPickerModel {
     }
 
     /// 選んでいるウインドウを、まとめて並べる候補に入れる・外す。
-    /// ほかのアプリのウインドウを、いまのデスクトップへ連れてくることはできないので、いまのデスクトップのウインドウだけ選べる
+    /// ほかのアプリのウインドウを、いまのデスクトップへ連れてくることはできないので、いまのデスクトップのウインドウだけ選べる（ドラッグと同じ決まり）
     private func toggleMark(_ window: WindowItem) {
         if let index = marked.firstIndex(of: window.id) {
             marked.remove(at: index)
-        } else if stage.currentSpaceIDs.contains(window.id) {
+        } else if dragRules.canCarry(window.id) {
             marked.append(window.id)
         } else {
             NSSound.beep()
@@ -233,6 +245,98 @@ final class DesktopPickerModel {
     }
 
     private var sections: [DesktopPickerSection] { displayGroups.flatMap(\.items) }
+
+    // MARK: - ドラッグ＆ドロップ（ステージへ入れる・グループに足す）
+
+    /// つかめるウインドウ・運ぶ組み合わせの決まり（PinstageCore の WindowSwitcherDragRules。スペースの印と同じく、いまのデスクトップのものだけ）
+    private var dragRules: WindowSwitcherDragRules<AXUIElement> {
+        WindowSwitcherDragRules(currentDesktop: stage.currentSpaceIDs)
+    }
+
+    /// 下の帯に出すグループ（開いたディスプレイの、いまのデスクトップのウインドウバーに並ぶものと同じ）
+    var dropGroups: [StageGroup] {
+        stage.groups(on: screen, desktop: stage.currentSpace(on: screen))
+    }
+
+    var isDragging: Bool { drag != nil }
+
+    /// いま運んでいるウインドウか（元の項目を薄く描く。すべてのデスクトップのウインドウは、どの欄のものも）
+    func isCarried(_ window: WindowItem) -> Bool {
+        drag?.ids.contains(window.id) == true
+    }
+
+    /// ウインドウをつかんで、少し動かした（印の付いたものをつかんだら、印の付いたものをまとめて運ぶ）。
+    /// ほかのデスクトップのウインドウはつかめない（スペースの印と同じく、ビープで知らせる。そのあとの動き・離したときは何もしない）
+    func beginDrag(_ window: WindowItem, at location: CGPoint) {
+        let items = dragRules.carried(grabbing: window.id, marked: marked).compactMap(stage.item(for:))
+        guard !items.isEmpty else {
+            NSSound.beep()
+            dragNotice = "ほかのデスクトップのウインドウは、いまのデスクトップへ連れてこられないので運べません"
+            return
+        }
+        clearDragNotice()
+        drag = DesktopPickerDragSession(items: items, location: location)
+        moveDrag(to: location)
+    }
+
+    func moveDrag(to location: CGPoint) {
+        guard let drag else { return }
+        drag.location = location
+        let target = acceptedTarget(at: location, for: drag)
+        if target != drag.target { drag.target = target }
+    }
+
+    /// 離した。ステージなら入れて閉じる（スペースで印を付けて ↩ と同じ）。グループなら足して、開いたまま光らせる。ほかの所では何もしない
+    func endDrag(at location: CGPoint) {
+        guard let drag else { return }
+        let target = acceptedTarget(at: location, for: drag)
+        cancelDrag()
+        switch target {
+        case .stage:
+            onClose()
+            stage.present(drag.items, on: screen)
+        case .group(let id):
+            let name = stage.library.group(id: id)?.name ?? "グループ"
+            let added = stage.addWindows(drag.items, toGroup: id)
+            if added > 0 {
+                flash(id)
+                dragNotice = "「\(name)」に \(added) 個足しました（↩ か esc で閉じる）"
+            } else {
+                dragNotice = "もう「\(name)」に入っています"
+            }
+        case nil:
+            break
+        }
+    }
+
+    /// ドラッグをやめる（esc・項目が消えた・ジェスチャーが途中で終わった）
+    func cancelDrag() {
+        if drag != nil { drag = nil }
+    }
+
+    /// 下の行の知らせを消す（消すものがあるときだけ書き換える。同じ値でも書き換えると、スイッチャー全体が描き直されるため）
+    private func clearDragNotice() {
+        if dragNotice != nil { dragNotice = nil }
+    }
+
+    /// その位置の、落とせる先（スクロールで隠れたグループ・落とせない先は nil）
+    private func acceptedTarget(at point: CGPoint, for drag: DesktopPickerDragSession) -> WindowSwitcherDropTarget? {
+        let target = stageDropFrame?.contains(point) == true
+            ? WindowSwitcherDropTarget.stage
+            : groupTargets.group(at: point).map(WindowSwitcherDropTarget.group)
+        return target.flatMap { drag.accepts($0) ? $0 : nil }
+    }
+
+    /// グループの行を一瞬光らせる（足したことが分かるように）
+    private func flash(_ id: UUID) {
+        flashTask?.cancel()
+        flashingGroup = id
+        flashTask = Task { [weak self] in
+            try? await Task.sleep(for: .milliseconds(650))
+            guard !Task.isCancelled else { return }
+            self?.flashingGroup = nil
+        }
+    }
 
     var displayGroups: [DesktopPickerDisplayGroup] {
         guard stage.isTrusted else { return [] }
@@ -346,6 +450,12 @@ final class DesktopPickerModel {
         select(next, in: sections)
     }
 
+    /// スイッチャーの中でマウスを押した（項目・ドラッグ・右上の切り替えなど）。
+    /// マウスで操作し始めたら、この回は修飾キーを離しても決まらない（ドラッグの途中で ⌥ を離しても閉じない。閉じるのは ↩・esc・クリック）
+    func noteMouseDown() {
+        release.cancel()
+    }
+
     /// 修飾キーが変わった（ショートカットで開いたとき、押していた修飾キーをすべて離したら決める）
     func handleFlagsChanged(_ flags: NSEvent.ModifierFlags) {
         guard release.consumeIfReleased(flags) else { return }
@@ -353,12 +463,15 @@ final class DesktopPickerModel {
     }
 
     func handleKey(_ event: NSEvent) -> Bool {
+        clearDragNotice()
         let command = event.modifierFlags.contains(.command)
         let control = event.modifierFlags.contains(.control)
         switch Int(event.keyCode) {
         case kVK_Escape:
-            // 絞り込み・選んだものを先に消し、何もなければ閉じる
-            if !query.isEmpty {
+            // ドラッグ・絞り込み・選んだものを先に消し、何もなければ閉じる
+            if isDragging {
+                cancelDrag()
+            } else if !query.isEmpty {
                 setQuery("")
             } else if !marked.isEmpty {
                 marked = []
@@ -452,7 +565,37 @@ final class DesktopPickerModel {
 
     func finish() {
         release.cancel()
+        cancelDrag()
+        flashTask?.cancel()
         previewCapture?.finish()
+    }
+}
+
+/// スイッチャーの 1 回のドラッグ（運ぶもの・ポインタの位置・ポインタの下の落とす先）。
+/// 位置は動かすたびに変わるので、モデルとは別の @Observable にして、位置を読む見本と、落とす先を読む下の帯だけを描き直す
+@Observable
+final class DesktopPickerDragSession {
+    /// 運ぶウインドウ（運ぶ順）
+    let items: [WindowItem]
+    /// 運ぶウインドウの見分け（元の項目を薄く描く）
+    let ids: Set<AXUIElement>
+    /// ドラッグしているポインタの位置（DesktopPickerDrop.space の座標）
+    var location: CGPoint
+    /// ポインタの下の、落とせる先（落とせない所では nil）
+    var target: WindowSwitcherDropTarget?
+    /// グループに入れられる手がかり（落とせる先かを、動かすたびに引き直さないように、始めたときに 1 回だけ作る）
+    @ObservationIgnored private let signatures: [WindowSignature?]
+
+    init(items: [WindowItem], location: CGPoint) {
+        self.items = items
+        ids = Set(items.map(\.id))
+        signatures = items.map(\.signature)
+        self.location = location
+    }
+
+    /// その先に落とせるか（決まりは PinstageCore の WindowSwitcherDrop）
+    func accepts(_ target: WindowSwitcherDropTarget) -> Bool {
+        WindowSwitcherDrop.accepts(target, carried: signatures)
     }
 }
 
@@ -535,7 +678,12 @@ final class DesktopPickerController: NSObject, NSWindowDelegate {
     private func watchOutsideClicks() {
         let clicks: NSEvent.EventTypeMask = [.leftMouseDown, .rightMouseDown, .otherMouseDown]
         localClick = NSEvent.addLocalMonitorForEvents(matching: clicks) { [weak self] event in
-            if let self, event.window !== panel { close() }
+            guard let self else { return event }
+            if event.window === panel {
+                activeModel?.noteMouseDown()
+            } else {
+                close()
+            }
             return event
         }
         globalClick = NSEvent.addGlobalMonitorForEvents(matching: clicks) { [weak self] _ in
