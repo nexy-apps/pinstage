@@ -11,7 +11,7 @@
 ```
 Pinstage/
 ├── App/            起動と、アプリ全体に関わるもの
-│   ├── AppDelegate           起動・各部品のつなぎ・ショートカットの操作・終了の合図（killall）を受けて終わる
+│   ├── AppDelegate           起動・各部品のつなぎ・ショートカットの操作・終了の合図（make stop の kill。SIGTERM）を受けて終わる
 │   ├── StatusItemController  メニューバーのアイコンとメニュー（ウインドウバーの出し入れ・出し方・新しい型・設定・アップデートを確認・終了）。新しい版があるときの印も出す
 │   ├── ShortcutCenter        ショートカットの割り当て（保存・ほかの操作とぶつかったときに外す）と登録。押したキーからショートカットを作る
 │   ├── HotKey                どこからでも使えるショートカット（Carbon の RegisterEventHotKey。Pinshot・Pinshelf と同じ）
@@ -28,7 +28,7 @@ Pinstage/
 │   ├── AXWindow              アクセシビリティの API でウインドウを読む・動かす・前に出す。許可の確認
 │   ├── WindowCatalog         いま開いているウインドウを集める（ふつうのウインドウだけ。決まりは PinstageCore の WindowEligibility）。ディスプレイの UUID・動いているアプリの識別名などの小さな道具
 │   ├── WindowListEntry       画面のウインドウの一覧（CGWindowList）の 1 つ分。一覧の読み方は、ここだけに置く
-│   ├── SkyLight              macOS の非公開の API の窓口（デスクトップの一覧・ウインドウのあるデスクトップ・自分のウインドウをデスクトップへ移す・ウインドウの番号）。
+│   ├── SkyLight              macOS の非公開の API の窓口（デスクトップの一覧・ウインドウのあるデスクトップ・自分のウインドウをデスクトップへ移す・ウインドウの番号・前面でなくてもポインタの形を変えられるようにする設定 SetsCursorInBackground）。
 │   │                         関数は名前で探し、見つからなければ使わない（公開の API だけの推測の仕組みに戻る）。非公開の関数は、ここの外からは呼ばない
 │   ├── RemoteWindows         ほかのデスクトップのウインドウを見つける（非公開の API。部品を番号から作って探す。メインの処理の外で、見つけていないウインドウがあるアプリだけ）
 │   ├── OtherSpaceDiscovery   RemoteWindows で探す段取り（メインの処理の外で探す・見つからなかったものは 30 秒たつまで探し直さない・見つけた部品からウインドウを作る）
@@ -37,7 +37,7 @@ Pinstage/
 │   ├── DockBadges            Dock のアイコンの標準のバッジを読む（Dock のアクセシビリティの情報 AXStatusLabel。アプリが絵に描いた印は読めない）
 │   ├── ThumbnailStore        ウインドウバー・切り替え画面で共有するサムネイル（ScreenCaptureKit。画面収録の許可）
 │   ├── DesktopPicker         ウインドウスイッチャー（一覧の組み立て、パネルの出し入れ、キー操作）
-│   ├── DesktopPickerView     一覧・アイコン・サムネイルの表示と、ボタンから出したときの矢印
+│   ├── DesktopPickerView     一覧・アイコン・サムネイルの表示と、ボタンから出したときの矢印。項目のドラッグ・下の帯の落とす先（ステージ・グループ）・ポインタについて動く見本
 │   ├── DesktopPickerThumbnails  見えているカードだけ撮り、パネルを閉じたら仕事をやめる
 │   ├── StripAvoider          ウインドウの知らせ（AXObserver）を受け、常に出しているウインドウバーの後ろに入り込んだら戻す。開いた・閉じた・しまわれた・戻された・アプリを隠した・終了した知らせで、すぐ一覧を読み直させる（1.5 秒ごとの読み直しを待たない）
 │   ├── CurrentSpace          いま見ているデスクトップ（操作スペース）にあるウインドウを見分ける（画面に出ているウインドウの一覧と照らし合わせる）。同じ 1 回の一覧から、どのウインドウバーが画面に出ているかも読む
@@ -46,7 +46,7 @@ Pinstage/
 │   └── AppIcons              アプリの識別名からアイコンと名前を得る（起動していないアプリも）。グループの中身のアイコン（MemberIcon）
 ├── Stage/          本体（1 つのクラスを、役目ごとのファイルに分けている）
 │   ├── StageController           ウインドウの読み直し（見分けは WindowClassifier、ほかのデスクトップは OtherSpaceDiscovery）・ディスプレイごとのステージ・並べて前に出す・グループの呼び出し（アプリの起動し直し）・保存
-│   ├── StageController+Groups    グループの保存（ステージから・見えている画面を記録）・上書き・編集・中身のドラッグ・並べ替え
+│   ├── StageController+Groups    グループの保存（ステージから・見えている画面を記録）・上書き・編集・中身のドラッグ・並べ替え・メンバーが 1 つ以下になったときの解消（editMembers）・メンバーのいるデスクトップについていく・分かれた印
 │   ├── StageController+Desktops  デスクトップ切り替えの見出しと、選んだウインドウを配置せずに前へ出す操作
 │   └── StageController+Layouts   並べ方の名前と、登録した型（登録・保存・名前の変更・削除）
 ├── Strip/          ウインドウバー（ディスプレイの端の一覧。辺は設定で選ぶ）
@@ -62,7 +62,7 @@ Pinstage/
 │   ├── StripRowCluster       同じアプリのウインドウのまとまり（となり合った行を、うすい枠でつなぐ。RowJoin・ClusterTray。アイコンの格子では、列の数から折り返しを決め、タイルの間まで枠を伸ばす）
 │   ├── StripGroupList        グループの一覧と行（見本・アイコンだけのときの形・右クリックのメニュー）
 │   ├── GroupMap              グループの見本（枠ごとに、入るアプリのアイコン）。枠の番号ごとの色（SlotPalette）。グループの編集画面でも使う
-│   ├── StripReorder          行をドラッグして並べ替える（ReorderDrag・落とす位置の線。同じアプリのまとまりは一緒に動かす。行の枠は、ずらし（offset）の外側で測る）
+│   ├── StripReorder          クリックかドラッグかの見分け（TapOrDrag。ウインドウスイッチャーの項目でも使う）・行をドラッグして並べ替える（ReorderDrag・落とす位置の線。同じアプリのまとまりは一緒に動かす。行の枠は、ずらし（offset）の外側で測る）
 │   ├── GroupMemberDrag       見本のアイコンをドラッグして、グループから外す・移す・並び順を変える（GroupDropTargets・MemberDrag）
 │   ├── StripLayoutControls   上の帯の並べ方のボタン（型・型を作る）と、グループを作る ＋（ステージを保存・見えている画面を記録）
 │   ├── StripStyle            ウインドウバーの見た目の共通の部品（上の帯・アイコンのボタン・見出し・検索の欄・欄の地）
@@ -119,6 +119,10 @@ PinstageCore/       画面に依存しないロジック（Swift パッケージ
 ├── Shortcuts                  ショートカット・割り当てられる操作・割り当て（保存と、ぶつかったときに外す）
 ├── LaunchAtLogin              ログイン時に起動（SMAppService。Pinshelf と同じ）
 ├── AppUpdates                 更新の状態（使えるか・自動で確かめるか・知らせる新しい版）。更新そのものは AppUpdateService（アプリでは SparkleUpdater）が受け持つ（Pinshelf と同じ）
+├── GroupDesktops              グループを出すデスクトップを、メンバーのいる所に合わせる決まり（MemberDesktop・GroupDesktopRule）・分かれたときの印と外すメンバー（GroupDesktopStatus）・
+│                              行き先が落ち着くまで待つ仕組み（DesktopFollowStabilizer）・ついていく・まとめて外す（StageLibrary.followDesktop・removeMembers）
+├── GroupDissolution           メンバーを書き換えて 1 つ以下になったグループを解消する決まり（GroupMemberEdit。複数のグループもまとめて）・確かめの文・確かめるかの設定
+├── WindowSwitcherDrag         ウインドウスイッチャーのドラッグの決まり（つかめるか・運ぶ組み合わせ WindowSwitcherDragRules・落とせる先か WindowSwitcherDrop）。グループにまとめて足すのは StageLibrary.addMembers（StageGroup）
 ├── StageGroup                 グループとその中身（StageGroup.Content）・出すデスクトップの決まり（isShown）・保存する中身（StageLibrary）とその書き換え（足す・中身の入れ替え・名前・並べ替え・型の登録と削除）・JSON ファイルへの読み書き
 ├── ScreenCoordinates          AppKit（左下が原点）とアクセシビリティの API（左上が原点）の座標の変換
 ├── GroupNaming                グループ・型の仮の名前
@@ -176,6 +180,12 @@ Makefile            ビルド・起動・テスト・インストール・配布
   グループは、保存したデスクトップのウインドウバーにだけ並べる。デスクトップは、番号（ManagedSpaceID。再起動で変わることがある）ではなく、
   macOS が設定ファイル（com.apple.spaces）に保存している UUID で覚える（StageGroup.desktopID。nil ならすべてのデスクトップ。前の版のグループも nil）。
   覚えた UUID のデスクトップがもうなければ、どこにでも並べる（呼び出せなくならないように）。
+  グループを出すデスクトップは、メンバーのいるデスクトップに合わせる（StageController.followMemberDesktops。読み直しのたびに呼ぶ）。
+  メンバーといまのウインドウの当てはめは呼び出しと同じ WindowMatcher、ウインドウのいる所は windowSpaces と desktopUUIDs（フルスクリーンのデスクトップと、× で閉じて隠しただけのウインドウは「分からない」）。
+  行き先の決まりは PinstageCore の GroupDesktopRule、分かれた印は GroupDesktopStatus。グループごとの状態は、読み直したときとグループを書き換えたときに
+  1 回だけ求めて `groupDesktopStatuses` に持ち、ウインドウバーの行は引くだけにする（行を描くたびに当てはめ直さない）。ほかのデスクトップのウインドウは遅れて見つかるので、
+  同じ行き先が 3 回の読み直し・2 秒続いたときに初めて保存する（DesktopFollowStabilizer。デスクトップを切り替えたら数え直す）。
+  行き先が別のディスプレイのデスクトップなら、出すディスプレイも合わせる（ディスプレイを決めていないグループはそのまま。そうしないと、どのウインドウバーにも並ばなくなる）
   関数が見つからないとき（macOS が変わったときなど）は、下の推測の仕組みに自動で戻る
 - **一覧はウインドウバーが持つ**（非公開の API が使えないときの推測の仕組み）：ウインドウバーは、自分のデスクトップのウインドウの一覧を持ったままにする（ほかのデスクトップを見ている間も変えない）。切り替えの動きの途中から、行き先の一覧が出ているようにするため。
   「画面に出ているウインドウの一覧」（CGWindowList）を読んだとき、同じ一覧に出ているウインドウバーが、そのデスクトップのウインドウバー（操作スペースの公開の API がないので、ウインドウバーのウインドウを目印にする）。
@@ -183,12 +193,26 @@ Makefile            ビルド・起動・テスト・インストール・配布
   切り替えの知らせ（activeSpaceDidChange）は動きが終わる前に来ることがあるので、知らせのあと、落ち着くまで少しずつ読み直す。
   最小化したウインドウ・隠したアプリのウインドウは、覚えた一覧とは別に、どのウインドウバーにも並べる。フルスクリーンのウインドウは、デスクトップの一覧に入れない
 
+- **メンバーを減らす書き換えは editMembers から**：グループのメンバーを外す・移す・編集画面で直すときは、StageController の `editMembers` で包む。
+  書き換えたあとの中身を GroupMemberEdit で前と比べ、メンバーが減って 1 つ以下になったグループがあれば、何個あっても 1 回だけ確かめる。
+  「解消する」なら、書き換え（減るだけのグループも）と解消をまとめて保存し、「キャンセル」なら何も保存しない。上書き保存・記録し直し（中身を入れ替える操作）は、1 つでも解消しない。
+  1 回の操作で複数のグループが変わるのは、いまは「ほかのグループへ移す」（元と移す先。減るのは元だけ）・型を消す（並べ方だけ）・並べ替え・デスクトップについていく（出すデスクトップだけ）で、
+  複数のグループのメンバーが一度に減る操作はまだない（足すときも editMembers を通せば、まとめて確かめられる）
 - **ステージはウインドウを抱え込まない**：ステージに出すのは「最前面に出すウインドウの組み合わせ」。出したり外したりしても、保存したグループは変わらない
 - **ディスプレイごとのステージ**：ウインドウバーを押したディスプレイのステージを変える。1 つのウインドウは 1 つのステージにだけ入る（別のディスプレイのステージに入れたら、前のステージから外れる）。`StageBoard.update` が外れたディスプレイを返し、`StageController.updateStage` がその残りを詰めて並べ直す（前には出さない）
 - **ウインドウを別のディスプレイへドラッグ**：バー内の並べ替えの行はスクロール欄で切り取られるため、外では `StripWindowDragFeedback` がマウスを受け取らない別パネルで見本を出し、行き先のバーの枠を光らせる。行き先のバーの `windowReorder` に落とす位置を入れて、同じバーの中と同じ線を出す。離したら `StageController.move` で、そのディスプレイのステージをそのウインドウだけにし、線の位置に並べる。並べ替えのはみ出しは同じディスプレイの中だけで許す（`StripDragGeometry`）
 - **デスクトップ別の切り替え一覧**：分類時に読んだデスクトップとウインドウの所属を使い、`DesktopWindowList` で所属ごとに分ける。ショートカットからも、ウインドウバーのボタンからも、同じ切り替え画面（全体）を、前面アプリを変えない `KeyboardPanel` で、そのディスプレイの真ん中に出す。ボタンから開いたときは、押したデスクトップの最初のウインドウを選んでおく（`DesktopPickerModel(focusing:)`）。確定時だけ、ほかのデスクトップにも対応した既存のフォーカス処理で前に出し、ステージへの配置処理は呼ばない。デスクトップの所属と順番は `StageController.desktopListGroups` で一度決める。スイッチャーの「デスクトップ別」ではグループを名前付きの枠で表示し、開いたディスプレイの枠とその現在のデスクトップを先頭にする。メインのバーに複数ディスプレイの個別ボタンを出すときも同じグループ情報を使い、個別ボタンの領域は `StripDesktopButtonLayout` で計算する。所属不明のウインドウはディスプレイの枠の外に並べる
 - **切り替え画面の操作**：初期設定ではショートカットに登録された修飾キーを覚え、`KeyboardPanel` に届くキーの変化を `WindowSwitcherRelease` で受け、すべて離したときに一度だけ確定する。表示までに離していたら、表示直後の確認で確定する。確定方法を「Enter」にした場合と、ウインドウバーのボタンから開いた場合は、自動確定を待たない。ショートカットで開いている間、同じショートカットを押すと確定方法にかかわらず次へ進む。文字は絞り込み（`WindowSwitcherFilter`。検索と同じ `SearchMatcher`）、スペースは並べる候補（いまのデスクトップのウインドウだけ。↩ で `StageController.present`）
 - **アプリのバッジ**：`DockBadges` は標準の `AXStatusLabel` を読み、`PublishedAppBadges` は置き場（`Application Support/Pinstage/BadgeSources`）にある `<バンドル ID>.json` を、相手のアプリを名指しせずに全部読む（形式は [BADGES.md](BADGES.md)）。有効な連携データ（空配列も含む）を優先し、なければ標準に戻す。起動中のアプリとファイルを照合し、2 秒に 1 回まで。バッジのデータは `AppIconBadge`、アイコンとバッジの描画は `WindowAppIcon` を両方の画面で共有する。アイコンの右下は「すべてのデスクトップ」の印に使う
+- **スイッチャーのドラッグ＆ドロップ**：落とす先はスイッチャーの中（下の帯）だけなので、システムのドラッグ＆ドロップ（NSDraggingSession・onDrag）は使わず、
+  項目の DragGesture（スイッチャー全体の座標 `DesktopPickerDrop.space`）で動きを追い、下の帯が覚えた枠で落とす先を決める（「ステージ」は `stageDropFrame`、
+  グループはウインドウバーと同じ `GroupDropTargets`。スクロールで見えている範囲だけ）。
+  項目は Button をやめ、4pt より動かさずに離したらクリック（ウインドウバーの行と同じ `TapOrDrag`。途中で終わったジェスチャーの後始末もここ）。つかめるか・運ぶ組み合わせ・落とせる先かは PinstageCore の `WindowSwitcherDragRules`・`WindowSwitcherDrop`
+  （スペースの印と同じく、いまのデスクトップのウインドウ `StageController.currentSpaceIDs` だけ。ウインドウで見分けるので、すべてのデスクトップのウインドウは欄が違っても 1 つ）。
+  ステージに落としたら `stage.present`（↩ と同じ）、グループなら `addWindows`。スイッチャーの中でマウスを押したら（項目・ドラッグ・右上の切り替えなど）、
+  修飾キーを離して決める待ちをやめる（パネルの外のクリックを見ているローカルモニターで拾い、`DesktopPickerModel.noteMouseDown` → `WindowSwitcherRelease.cancel`。入口ごとには書かない）。
+  1 回のドラッグは `DesktopPickerDragSession`（運ぶもの・位置・ポインタの下の先。モデルとは別の @Observable）にまとめ、始めたとき・終えたときだけモデルの `drag` が変わる。
+  位置はポインタについて動く見本だけが、ポインタの下の先は下の帯の落とす先ごとの部品だけが読む（動かすたびに一覧全体を描き直さないように）
 - **ショートカットの切り替え画面の設定**：`WindowSwitcherSettings` のグループ分け・見た目・大きさは独立し、ウインドウバーのボタンから開いたときにも同じ表示を使う（初期設定はデスクトップ別・アイコンだけ）。画面の高さと列数は中身に合わせる（`WindowSwitcherLayout`。ビューも同じ寸法で描く）。サムネイルを選ぶときは設定画面とスイッチャーで保存・許可確認の処理を共有する。切り替え画面の中でも変えられ（右上の切り替え・⌘G・⌘1〜3）、変えた値はそのまま設定に残す。表示を変えたら、パネルを中身に合う大きさにし、列の数を合わせ、選んでいるウインドウを探し直して保つ（`DesktopPickerModel.setGrouping`・`setAppearance`）。まとめて表示するときは `WindowFocusHistory`（起動中に観測したフォーカス）で順番を決め、同じウインドウは一度だけ出す。サムネイルは既存の画像を再利用し、足りないものは画面内のカードから非同期で撮影する。閉じたら撮影の処理をキャンセルする
 - **外で前に出したウインドウに選択を合わせる**：`StripAvoider` の受け取り口で、前面アプリの切り替え（NSWorkspace）とアプリ内のフォーカスの変更（AXObserver）を拾う。デスクトップの切り替えや定期的な読み直しでも確かめる。前面アプリのフォーカスが、画面に出ているウインドウバーの対象に変わったら、`StageBoard.followFocus` で選択だけを更新する。組み合わせ内ならそのまま。組み合わせ外ならそのウインドウだけを選び、位置・大きさ・並べ方は変えない。Pinstage が並べて前に出す間は、途中のフォーカス変更で選択を崩さない
 - **型とグループを分ける**：型は並べ方の形だけ（どのアプリかは覚えない）。グループは「どのウインドウを、どの型で、どのディスプレイに」並べるか
@@ -215,6 +239,11 @@ Developer ID に登録しない前提で、[Sparkle](https://sparkle-project.org
 - URL スキームを分けるのは、配る版と開発のビルドの両方が `pinstage://` を名乗ると、どちらが開くか決まらないため。スキームはビルドの設定（`PINSTAGE_URL_SCHEME`）だけで決め、アプリは自分の Info.plist から読んだスキーム（`Bundle.urlScheme`）で URL を読み（`PinstageURL.parse`）、設定の「自動化」にも出す
 - グループと型（`library.json`）・アプリのバッジの置き場は、ID ではなく決まった場所（`Application Support/Pinstage`）にあるので、配る版・開発のビルド・更新の試験用で同じファイルを使う。設定（UserDefaults）は ID ごとに分かれる
 - ビルドの設定は `project.yml` の 3 つ。Debug（`make build`・`make run`）、Install（`make install`。Release と同じ最適化・Hardened Runtime で、ID・名前・URL スキーム・証明書・空の公開鍵は Debug と同じ。YAML のアンカーで Debug と共有する）、Release（`make dist`）
+- 開発のビルドを置く場所は 1 つ: `make run`（Debug）も `make install`（Install）も、ビルドしたものを `/Applications/Pinstage Dev.app` に写して置き換える（中身は最後に流したほう）。
+  ファイルの名前（PRODUCT_NAME）は `Pinstage` のまま変えず、写すときに名前を付ける（フォルダの名前を変えても署名は崩れない）。
+  同じ ID のアプリが 2 か所にあると、どちらが開くか・システム設定の許可の一覧（ファイルの名前が出る）でどれが開発版かが分かりにくいので、
+  Launch Services には `Pinstage Dev.app` だけを登録し、ビルドのフォルダの `Pinstage.app` は登録を外す（`place_dev_app`）。
+  `make build`・`make preview`・`make readme-images` は、ビルドのフォルダのまま使う（起動しない・画面に出さないため）
 - 開発のビルド・アイコンを描く道具・更新の試験の鍵の道具も、開発用の証明書で署名する。証明書がなければ止まって `make cert` を案内し、`ADHOC=1` を付けたときだけアドホック署名にする（`1` だけを受け付ける。配る版には効かない）。`make build`・`make install` は、ビルドのあとに想定の署名になったかを確かめる（開発用の証明書は人ごとに違うので、名前で見る）
 - **配る版の署名**：配る版用の証明書と、更新ファイルの署名の鍵（Sparkle・アカウント名 `nexy-release`）は、作者の Mac の鍵付きのキーチェーン（金庫。`~/Library/Keychains/nexy-release.keychain-db`）に入っている（Pin シリーズで共通。Pinshelf の `scripts/create-nexy-keys.sh` で作った）。金庫はふだん閉まっていて、検索リストにも入れない。`make dist`・`make publish` は `scripts/vault.sh` を通して、その場でパスワードを聞いて開け、開けている間だけ検索リストに入れ、終わったら（失敗しても）閉める。Xcode から直接 Release でビルドすると、金庫が検索リストにないので「No certificate matching …」で止まる（アドホック署名にはならない）
 - 証明書は名前ではなく指紋（SHA-1）で確かめる。`make dist` は、署名の前に金庫の証明書の指紋が `project.yml` の Release の `CODE_SIGN_IDENTITY`（Xcode もこの指紋で証明書を選ぶ）と合うか、署名のあとにアプリがその証明書で署名されたかを確かめる（`scripts/signing-check.sh`）

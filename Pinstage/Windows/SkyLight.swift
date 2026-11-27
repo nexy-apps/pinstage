@@ -36,6 +36,7 @@ enum SkyLight {
     private typealias GetProcessForPIDFunction = @convention(c) (pid_t, UnsafeMutablePointer<ProcessSerialNumber>) -> OSStatus
     private typealias SetFrontProcessFunction = @convention(c) (UnsafeMutablePointer<ProcessSerialNumber>, CGWindowID, UInt32) -> CGError
     private typealias PostEventRecordFunction = @convention(c) (UnsafeMutablePointer<ProcessSerialNumber>, UnsafeMutablePointer<UInt8>) -> CGError
+    private typealias SetConnectionPropertyFunction = @convention(c) (Int32, Int32, CFString, CFTypeRef) -> CGError
 
     private static let library = dlopen("/System/Library/PrivateFrameworks/SkyLight.framework/SkyLight", RTLD_NOW)
 
@@ -58,8 +59,24 @@ enum SkyLight {
     private static let getProcessForPID = function(["GetProcessForPID"], as: GetProcessForPIDFunction.self)
     private static let setFrontProcess = function(["_SLPSSetFrontProcessWithOptions"], as: SetFrontProcessFunction.self)
     private static let postEventRecord = function(["SLPSPostEventRecordTo"], as: PostEventRecordFunction.self)
+    private static let setConnectionProperty = function(["SLSSetConnectionProperty", "CGSSetConnectionProperty"], as: SetConnectionPropertyFunction.self)
 
     private static let connection: Int32? = mainConnection?()
+
+    /// 前面のアプリでなくても、ポインタの形を変えられるようにする（何度呼んでも、設定するのは最初の 1 回だけ）
+    ///
+    /// macOS は、前面にないアプリからの NSCursor.set を受け付けない。Pinstage はふつう前面のアプリではなく、
+    /// ウインドウバーも前面に出ないパネルなので、幅を変える縁でポインタの形を変えるには、自分の接続にこの設定を付ける
+    /// （ほかの常駐アプリでも使われている非公開の設定。関数がなければ何もしない）
+    static func allowCursorChangesInBackground() {
+        _ = setsCursorInBackground
+    }
+
+    /// 前面のアプリでなくても、ポインタの形を変えられるようにしたか（最初に読んだときに 1 回だけ設定する）
+    private static let setsCursorInBackground: Bool = {
+        guard let connection, let setConnectionProperty else { return false }
+        return setConnectionProperty(connection, connection, "SetsCursorInBackground" as CFString, kCFBooleanTrue) == .success
+    }()
 
     /// デスクトップを扱う関数がそろっているか（そろっていなければ、公開の API だけの推測の仕組みを使う）
     static let isAvailable: Bool = connection != nil && copyDisplaySpaces != nil && copySpacesForWindows != nil

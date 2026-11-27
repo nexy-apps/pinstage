@@ -58,6 +58,8 @@ struct DesktopPickerView: View {
                         if let selected = model.selected { proxy.scrollTo(selected) }
                     }
                 }
+                // ドラッグで落とす先（ステージ・グループ）。ウインドウの一覧を狭めないよう、下の帯に出す
+                DesktopPickerDropBar(model: model)
                 footer(item)
             }
             DesktopPickerHints()
@@ -66,6 +68,9 @@ struct DesktopPickerView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16))
         .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(.separator).allowsHitTesting(false))
+        // ドラッグしている間、ポインタについて動く見本（位置は、下の座標の名前で測る）
+        .overlay(alignment: .topLeading) { DesktopPickerDragPreview(model: model) }
+        .coordinateSpace(.named(DesktopPickerDrop.space))
     }
 
     @ViewBuilder
@@ -192,10 +197,17 @@ struct DesktopPickerView: View {
         VStack(spacing: Layout.footerSpacing) {
             Divider()
             HStack(spacing: 8) {
-                if !model.marked.isEmpty {
+                if model.isDragging {
+                    Image(systemName: "hand.draw").foregroundStyle(Color.accentColor)
+                    Text("\(model.drag?.items.count ?? 0) 個を運んでいます")
+                    Text("ステージに落とすと入れて閉じる・グループに落とすと足す・esc でやめる").foregroundStyle(.secondary)
+                } else if let notice = model.dragNotice {
+                    Image(systemName: "info.circle").foregroundStyle(.secondary)
+                    Text(notice).lineLimit(1)
+                } else if !model.marked.isEmpty {
                     Image(systemName: "checkmark.circle.fill").foregroundStyle(Color.accentColor)
                     Text("\(model.marked.count) 個を選んでいます")
-                    Text("↩ でステージに並べる・esc で選び直す").foregroundStyle(.secondary)
+                    Text("↩ かドラッグでステージに並べる・esc で選び直す").foregroundStyle(.secondary)
                 } else if let (section, window) = item {
                     Text(window.displayTitle).lineLimit(1)
                     if !window.title.isEmpty {
@@ -229,10 +241,17 @@ struct DesktopPickerView: View {
                 appBadges: model.stage.badges(for: window),
                 isOnStage: model.isOnStage(window),
                 isMarked: model.isMarked(window),
+                isCarried: model.isCarried(window),
                 appearance: model.appearance,
                 displaySize: model.displaySize,
                 thumbnail: model.appearance == .thumbnails ? model.thumbnails.images[window.id] : nil,
-                selected: selection == row
+                selected: selection == row,
+                drag: DesktopPickerDragActions(
+                    began: { model.beginDrag(window, at: $0) },
+                    moved: { model.moveDrag(to: $0) },
+                    ended: { model.endDrag(at: $0) },
+                    cancelled: { model.cancelDrag() }
+                )
             ) {
                 model.activate(window, in: section)
             }
@@ -344,37 +363,50 @@ private struct DesktopPickerEntry: View {
     let isOnStage: Bool
     /// スペースで選んでいるか（↩ でまとめてステージに並べる）
     let isMarked: Bool
+    /// ドラッグで運んでいる途中か（薄く描く）
+    let isCarried: Bool
     let appearance: WindowSwitcherSettings.Appearance
     let displaySize: WindowSwitcherSettings.DisplaySize
     let thumbnail: NSImage?
     let selected: Bool
+    let drag: DesktopPickerDragActions
     let action: () -> Void
     @State private var hovering = false
 
     private typealias Layout = WindowSwitcherLayout
 
     var body: some View {
-        Button(action: action) {
-            Group {
-                switch appearance {
-                case .list: listRow
-                case .icons, .thumbnails: tile
-                }
+        Group {
+            switch appearance {
+            case .list: listRow
+            case .icons, .thumbnails: tile
             }
-            .background(selected ? StripStyle.selectedFill : hovering ? StripStyle.rowHoverFill : StripStyle.rowFill,
-                        in: RoundedRectangle(cornerRadius: 10))
-            // 選んでいる項目は、ウインドウバーのステージに出ている行と同じく、青い枠で囲む
-            .overlay(
-                RoundedRectangle(cornerRadius: 10)
-                    .strokeBorder(selected ? Color.accentColor.opacity(0.9) : .clear, lineWidth: 2)
-            )
-            .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .background(selected ? StripStyle.selectedFill : hovering ? StripStyle.rowHoverFill : StripStyle.rowFill,
+                    in: RoundedRectangle(cornerRadius: 10))
+        // 選んでいる項目は、ウインドウバーのステージに出ている行と同じく、青い枠で囲む
+        .overlay(
+            RoundedRectangle(cornerRadius: 10)
+                .strokeBorder(selected ? Color.accentColor.opacity(0.9) : .clear, lineWidth: 2)
+        )
+        .contentShape(Rectangle())
+        .opacity(isCarried ? 0.45 : 1)
         .onHover { hovering = $0 }
+        // クリックとドラッグは、少し動かしたかで見分ける（動かさずに離したらクリック。ウインドウバーの行と同じ部品）。
+        // ほかのデスクトップのウインドウは、つかもうとしたときにモデルが断る（そのあとの動きは何もしない）
+        .modifier(TapOrDrag(
+            space: DesktopPickerDrop.space,
+            onTap: action,
+            onBegan: { drag.began($0.location) },
+            onChanged: { drag.moved($0.location) },
+            onEnded: { drag.ended($0.location) },
+            onCancelled: drag.cancelled
+        ))
         .help(helpText)
+        .accessibilityElement(children: .combine)
         .accessibilityLabel(accessibilityTitle)
-        .accessibilityAddTraits(selected ? .isSelected : [])
+        .accessibilityAddTraits(selected ? [.isButton, .isSelected] : .isButton)
+        .accessibilityAction(.default, action)
     }
 
     private var listRow: some View {
@@ -490,5 +522,157 @@ private struct DesktopPickerEntry: View {
     private var accessibilityTitle: String {
         let title = window.title.isEmpty ? window.displayTitle : "\(window.displayTitle)、\(window.appName)"
         return ([title] + details).joined(separator: "、")
+    }
+}
+
+/// スイッチャーのドラッグ＆ドロップで使う値
+enum DesktopPickerDrop {
+    /// ドラッグの位置と、落とす先の枠を測る座標の名前（スイッチャー全体）
+    static let space = "DesktopPickerDrop"
+}
+
+/// 項目からのドラッグを、スイッチャーの中身に伝える（位置は DesktopPickerDrop.space の座標）
+struct DesktopPickerDragActions {
+    /// 少し動かした（つかめないウインドウなら、モデルが断る）
+    let began: (CGPoint) -> Void
+    let moved: (CGPoint) -> Void
+    let ended: (CGPoint) -> Void
+    /// ジェスチャーが途中で終わった・項目が消えた
+    let cancelled: () -> Void
+}
+
+/// ドラッグで落とす先の帯（ステージと、保存したグループ）。
+/// ドラッグしていないときは控えめに出し、ドラッグを始めたら、落とせる所を目立たせる（ポインタの下は、さらに濃く）
+private struct DesktopPickerDropBar: View {
+    let model: DesktopPickerModel
+    /// グループの欄の中身の幅（少ないときは中身の幅、多いときは残りいっぱいでスクロール）
+    @State private var contentWidth: CGFloat = 0
+
+    var body: some View {
+        let groups = model.dropGroups
+        let running = NSWorkspace.shared.runningBundleIDs
+        HStack(spacing: 8) {
+            DesktopPickerDropTarget(model: model, target: .stage) {
+                Label("ステージ", systemImage: "rectangle.inset.filled.and.person.filled")
+                    .labelStyle(.titleAndIcon)
+                    .font(.callout)
+                    .padding(.horizontal, 10)
+            }
+            .help("ここに落とすと、ステージに入れて閉じます（スペースで選んで ↩ と同じ）")
+            Divider().frame(height: 20)
+            if groups.isEmpty {
+                Text("このデスクトップのグループはありません")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                Spacer(minLength: 0)
+            } else {
+                ScrollView(.horizontal) {
+                    HStack(spacing: 6) {
+                        ForEach(groups) { group in
+                            DesktopPickerDropTarget(model: model, target: .group(group.id)) {
+                                HStack(spacing: 6) {
+                                    MemberIcons(members: group.members, running: running)
+                                    Text(group.name).font(.callout).lineLimit(1)
+                                }
+                                .padding(.horizontal, 8)
+                            }
+                            .help("ここに落とすと、「\(group.name)」に足します（もう入っているものは足しません）")
+                        }
+                    }
+                    .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { contentWidth = $0 }
+                }
+                .scrollIndicators(.never)
+                .scrollBounceBehavior(.basedOnSize, axes: .horizontal)
+                .frame(maxWidth: contentWidth > 0 ? contentWidth : nil, alignment: .leading)
+                // スクロールで隠れたグループには落とさないよう、見えている範囲を覚える
+                .onGeometryChange(for: CGRect.self) { $0.frame(in: .named(DesktopPickerDrop.space)) } action: { model.groupTargets.viewport = $0 }
+                .onDisappear { model.groupTargets.viewport = .null }
+                Spacer(minLength: 0)
+            }
+        }
+        .frame(height: WindowSwitcherLayout.dropBarHeight)
+        .opacity(model.isDragging ? 1 : 0.7)
+        .animation(.easeOut(duration: 0.15), value: model.isDragging)
+    }
+}
+
+/// 落とす先の 1 つ（枠を覚え、ドラッグの間は光らせる）。
+/// ポインタの下の先・光らせるグループは、この中で読む（変わったときに、帯全体ではなく、この先だけを描き直すため）
+private struct DesktopPickerDropTarget<Label: View>: View {
+    let model: DesktopPickerModel
+    let target: WindowSwitcherDropTarget
+    @ViewBuilder let label: Label
+
+    var body: some View {
+        let isHovered = model.drag?.target == target
+        let accepts = model.drag?.accepts(target) == true
+        let isFlashing: Bool = if case .group(let id) = target { model.flashingGroup == id } else { false }
+        let isLit = isHovered || isFlashing
+        label
+            .frame(height: WindowSwitcherLayout.dropBarHeight - 4)
+            .background(
+                isLit ? StripStyle.dropTargetFill : accepts ? Color.accentColor.opacity(0.06) : StripStyle.rowFill,
+                in: RoundedRectangle(cornerRadius: StripStyle.cornerRadius, style: .continuous)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: StripStyle.cornerRadius, style: .continuous)
+                    .strokeBorder(
+                        isLit ? Color.accentColor : accepts ? Color.accentColor.opacity(0.6) : .clear,
+                        style: StrokeStyle(lineWidth: isLit ? 2 : 1, dash: accepts && !isLit ? [4, 3] : [])
+                    )
+                    .allowsHitTesting(false)
+            )
+            .animation(.easeOut(duration: 0.2), value: isFlashing)
+            .fixedSize(horizontal: true, vertical: false)
+            .onGeometryChange(for: CGRect.self) { $0.frame(in: .named(DesktopPickerDrop.space)) } action: { remember($0) }
+            .onDisappear { remember(nil) }
+    }
+
+    /// 枠を覚える（ステージは 1 つ、グループはウインドウバーと同じ GroupDropTargets に）
+    private func remember(_ frame: CGRect?) {
+        switch target {
+        case .stage: model.stageDropFrame = frame
+        case .group(let id): model.groupTargets.frames[id] = frame
+        }
+    }
+}
+
+/// ドラッグしている間、ポインタについて動く見本（運んでいるウインドウのアイコンを重ね、2 つ以上なら数を添える）。
+/// 位置は動かすたびに変わるので、ここでは位置だけを読み、アイコンの山は別の部品にする（動かしても組み立て直さない）
+private struct DesktopPickerDragPreview: View {
+    let model: DesktopPickerModel
+
+    var body: some View {
+        if let drag = model.drag {
+            DesktopPickerDragStack(items: drag.items)
+                .offset(x: drag.location.x + 6, y: drag.location.y + 6)
+                .allowsHitTesting(false)
+        }
+    }
+}
+
+/// 運んでいるウインドウのアイコンの山
+private struct DesktopPickerDragStack: View {
+    let items: [WindowItem]
+
+    var body: some View {
+        ZStack(alignment: .topTrailing) {
+            ZStack {
+                ForEach(Array(items.prefix(3).enumerated().reversed()), id: \.offset) { index, item in
+                    WindowAppIcon(image: item.icon, size: 40, badges: [], isDimmed: false, showsAllDesktops: false, showsFallback: true)
+                        .offset(x: CGFloat(index) * 6, y: CGFloat(index) * 6)
+                }
+            }
+            .padding(6)
+            if items.count > 1 {
+                Text("\(items.count)")
+                    .font(.caption.weight(.bold).monospacedDigit())
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 6)
+                    .background(Capsule().fill(Color.accentColor))
+            }
+        }
+        .shadow(radius: 4)
     }
 }

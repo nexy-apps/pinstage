@@ -17,11 +17,15 @@ extension StageController {
     }
 
     /// そのディスプレイで、いま表に出ているデスクトップの UUID（保存したグループは、このデスクトップのウインドウバーに出す。分からなければ nil で、すべてのデスクトップ）
+    /// 保存する値なので、覚えておいた一覧ではなく、いまの一覧を読み直して決める（切り替えた直後に保存しても、前のデスクトップにならないように）
     private func currentDesktopID(on screen: NSScreen) -> String? {
-        guard SkyLight.isAvailable, let displays = SkyLight.displays(),
-              let display = SkyLight.display(forKey: Self.displayKey(screen), in: displays)
-        else { return nil }
-        return display.spaces.first { $0.id == display.current }?.uuid
+        Self.currentSpace(on: screen, in: SkyLight.isAvailable ? SkyLight.displays() : nil)?.uuid
+    }
+
+    /// そのディスプレイで、いま表に出ているデスクトップ（デスクトップの一覧から引く。分からなければ nil）
+    private static func currentSpace(on screen: NSScreen, in displays: [SkyLight.Display]?) -> SkyLight.Space? {
+        guard let displays, let display = SkyLight.display(forKey: displayKey(screen), in: displays) else { return nil }
+        return display.spaces.first { $0.id == display.current }
     }
 
     /// デスクトップの番号から、その UUID（グループを出すデスクトップとして覚える値。分からなければ nil）
@@ -88,9 +92,11 @@ extension StageController {
 
     // MARK: - 編集する
 
-    /// グループの編集画面で直したグループを保存する（同じ ID のグループを置き換える）
-    func updateGroup(_ group: StageGroup) {
-        editLibrary { $0.updateGroup(group) }
+    /// グループの編集画面で直したグループを保存する（同じ ID のグループを置き換える）。
+    /// 外してメンバーが 1 つ以下になるときは、解消するか確かめる。保存した（解消した）ら true、キャンセルしたら false
+    @discardableResult
+    func updateGroup(_ group: StageGroup) -> Bool {
+        editMembers { $0.updateGroup(group) }
     }
 
     /// グループの並べ方を変える（右クリックの「並べ方」）。選んだらすぐ、ステージに映す
@@ -125,36 +131,141 @@ extension StageController {
 
     /// ウインドウをグループに足す（ウインドウの行をグループの行の上で離した）
     func addWindow(_ item: WindowItem, toGroup id: UUID) {
-        guard let signature = item.signature else { return }
-        editLibrary { $0.addMember(signature, toGroup: id) }
+        addWindows([item], toGroup: id)
     }
 
-    /// グループから中身を外す（見本のアイコンを、グループの行の外で離した）。最後の 1 つなら、グループごと削除するか聞く
+    /// ウインドウをまとめてグループに足す（スイッチャーで、印の付いたものをグループへ落とした）。
+    /// もう入っているもの・手がかりのないものは足さない。足した数を返す
+    @discardableResult
+    func addWindows(_ items: [WindowItem], toGroup id: UUID) -> Int {
+        let signatures = items.compactMap(\.signature)
+        guard !signatures.isEmpty else { return 0 }
+        return editLibrary { $0.addMembers(signatures, toGroup: id) }
+    }
+
+    /// グループから中身を外す（見本のアイコンを、グループの行の外で離した）。1 つ以下になるなら、解消するか確かめる
     func removeMember(at index: Int, fromGroup id: UUID) {
-        guard let group = library.group(id: id), group.members.indices.contains(index) else { return }
-        if group.members.count == 1 {
-            guard Confirmation.ask(
-                title: "「\(group.name)」の最後のウインドウです",
-                message: "外すとグループが空になります。グループごと削除しますか？",
-                action: "グループを削除"
-            ) else { return }
-            deleteGroup(id)
-            return
-        }
-        editLibrary { $0.removeMember(at: index, fromGroup: id) }
+        editMembers { $0.removeMember(at: index, fromGroup: id) }
     }
 
-    /// 中身をほかのグループへ移す（見本のアイコンを、ほかのグループの行の上で離した）。元のグループが空になったら、削除するか聞く
+    /// 中身をほかのグループへ移す（見本のアイコンを、ほかのグループの行の上で離した）。元のグループが 1 つ以下になるなら、解消するか確かめる
     func moveMember(at index: Int, from source: UUID, to destination: UUID) {
-        guard editLibrary({ $0.moveMember(at: index, from: source, to: destination) }) else { return }
-        if let group = library.group(id: source), group.members.isEmpty,
-           Confirmation.ask(
-               title: "「\(group.name)」が空になりました",
-               message: "中身のないグループを削除しますか？",
-               action: "削除"
-           ) {
-            deleteGroup(source)
+        editMembers { $0.moveMember(at: index, from: source, to: destination) }
+    }
+
+    /// 別のデスクトップにいるメンバーを外す（グループの右クリック・分かれた印のメニュー）。1 つ以下になるなら、解消するか確かめる
+    func removeStrayMembers(ofGroup id: UUID) {
+        guard let group = library.group(id: id) else { return }
+        let strays = desktopStatus(of: group).strayIndices
+        guard !strays.isEmpty else { return }
+        editMembers { $0.removeMembers(at: strays, fromGroup: id) }
+    }
+
+    // MARK: - メンバーが 1 つ以下になったら解消する
+
+    /// グループのメンバーを書き換える（外す・移す・編集画面で直す）。メンバーが減って 1 つ以下になるグループがあれば、
+    /// 解消するか 1 回だけ確かめる（決まりは PinstageCore の GroupMemberEdit）。
+    /// 「解消する」なら、書き換えと解消をまとめて保存する。「キャンセル」なら、どのグループも変えない（一部だけ外す・一部だけ解消する、はしない）
+    /// - Returns: 保存した（変わらなかったときも含む）なら true、キャンセルしたら false
+    @discardableResult
+    func editMembers(_ change: (inout StageLibrary) -> Void) -> Bool {
+        var edited = library
+        change(&edited)
+        let edit = GroupMemberEdit(before: library, edited: edited)
+        if edit.needsConfirmation, !confirmDissolution(of: edit.dissolving) { return false }
+        editLibrary { $0 = edit.resolved }
+        return true
+    }
+
+    /// グループを解消してよいか確かめる（設定で確かめないことにしていれば、聞かずに解消する）
+    private func confirmDissolution(of groups: [StageGroup]) -> Bool {
+        guard confirmsGroupDissolution else { return true }
+        let answer = Confirmation.ask(
+            title: GroupDissolutionText.title(for: groups),
+            message: GroupDissolutionText.message(for: groups),
+            action: GroupDissolutionText.action,
+            suppression: GroupDissolutionText.suppression
+        )
+        // チェックを付けて「解消する」を押したら、次からは聞かない（設定の「一般」で戻せる）
+        if answer.confirmed, answer.suppressed { confirmsGroupDissolution = false }
+        return answer.confirmed
+    }
+
+    // MARK: - メンバーのいるデスクトップ
+
+    /// グループを出せるデスクトップの番号ごとの UUID（フルスクリーンのアプリのデスクトップは除く。グループがフルスクリーンへついていかないように）
+    private var assignableDesktopUUIDs: [UInt64: String] {
+        guard let displays = desktopDisplays else { return desktopUUIDs }
+        let fullScreen = Set(displays.flatMap(\.spaces).filter(\.isFullScreen).map(\.id))
+        return desktopUUIDs.filter { !fullScreen.contains($0.key) }
+    }
+
+    /// 出すデスクトップが決まっているグループごとに、メンバーのいる所を求め直す（読み直したとき・グループを書き換えたとき）
+    ///
+    /// 当てはめは呼び出しと同じ WindowMatcher（動いているアプリは、見つからなかったメンバーの種類を分けるだけなので渡さない）。
+    /// 閉じたものと、× で閉じて隠しただけのものは「分からない」
+    func updateGroupDesktopStatuses() {
+        let groups = library.groups.filter { $0.desktopID != nil }
+        var next: [UUID: GroupDesktopStatus] = [:]
+        if !groups.isEmpty {
+            // 候補とデスクトップの UUID は、どのグループでも同じなので 1 回だけ作る
+            let candidates = windowsWithSignature()
+            let signatures = candidates.map(\.signature)
+            let uuids = assignableDesktopUUIDs
+            for group in groups {
+                let members: [MemberDesktop] = WindowMatcher.match(group.members, candidates: signatures, runningBundleIDs: []).map { match in
+                    guard let spaces = windowSpaces, let index = match.windowIndex else { return .unknown }
+                    let item = candidates[index].item
+                    guard !hiddenWindowIDs.contains(item.id) else { return .unknown }
+                    return MemberDesktop(spaces: spaces[item.id], desktopUUIDs: uuids)
+                }
+                next[group.id] = GroupDesktopStatus(desktopID: group.desktopID, members: members)
+            }
         }
+        if next != groupDesktopStatuses { groupDesktopStatuses = next }
+    }
+
+    /// グループのメンバーが、グループを出すデスクトップにどれだけいるか（分かれた印・別のデスクトップのメンバーを外す）。
+    /// すべてのデスクトップに出すグループは、いつも分かれていない
+    func desktopStatus(of group: StageGroup) -> GroupDesktopStatus {
+        groupDesktopStatuses[group.id] ?? GroupDesktopStatus(desktopID: nil, members: [])
+    }
+
+    /// デスクトップの UUID から、その名前（「デスクトップ 2」。分からなければ nil）
+    func desktopName(forDesktopID desktopID: String) -> String? {
+        desktopUUIDs.first { $0.value == desktopID }.flatMap { desktopNames[$0.key]?.title }
+    }
+
+    /// グループを出すデスクトップを、メンバーのいる所に合わせる（読み直すたびに呼ぶ）
+    ///
+    /// 行き先の決まりは PinstageCore の GroupDesktopRule。ほかのデスクトップのウインドウは遅れて見つかるので、
+    /// 同じ行き先が続いたときに初めて合わせる（DesktopFollowStabilizer）。合わせた結果は保存する（アプリを閉じても、移した先に残るように）
+    func followMemberDesktops() {
+        updateGroupDesktopStatuses()
+        guard windowSpaces != nil, !desktopUUIDs.isEmpty else { return }
+        let now = ProcessInfo.processInfo.systemUptime
+        var moves: [(id: UUID, desktopID: String)] = []
+        for (id, status) in groupDesktopStatuses {
+            let destination = GroupDesktopRule.destination(current: status.desktopID, members: status.members)
+            if let next = desktopFollower.observe(id, current: status.desktopID, destination: destination, now: now) {
+                moves.append((id, next))
+            }
+        }
+        desktopFollower.prune(keeping: Set(library.groups.map(\.id)))
+        guard !moves.isEmpty else { return }
+        editLibrary { library in
+            for move in moves {
+                library.followDesktop(move.desktopID, display: displayID(ofDesktop: move.desktopID), ofGroup: move.id)
+            }
+        }
+    }
+
+    /// そのデスクトップのあるディスプレイの UUID（つながっているディスプレイのものだけ。分からなければ nil）
+    private func displayID(ofDesktop desktopID: String) -> String? {
+        guard let display = desktopDisplays?.first(where: { $0.spaces.contains { $0.uuid == desktopID } }),
+              NSScreen.screen(withDisplayUUID: display.identifier) != nil
+        else { return nil }
+        return display.identifier
     }
 
     /// グループの中身の並び順を変える（見本のアイコンを、同じグループのほかのアイコンの上で離した）
@@ -198,6 +309,12 @@ extension StageController {
         let desktop = desktopID(of: space)
         let known = Set(desktopUUIDs.values)
         return byDisplay.filter { $0.isShown(onDesktop: desktop, knownDesktops: known) }
+    }
+
+    /// そのディスプレイで、いま表に出ているデスクトップの番号（分からなければ nil。スイッチャーに、そのウインドウバーと同じグループを出すため）
+    /// 画面を描くたびに呼ぶので、読み直しのときに覚えた一覧から引く
+    func currentSpace(on screen: NSScreen) -> UInt64? {
+        Self.currentSpace(on: screen, in: desktopDisplays)?.id
     }
 
     /// グループをドラッグで並べ替える（ショートカットの番号も変わる）

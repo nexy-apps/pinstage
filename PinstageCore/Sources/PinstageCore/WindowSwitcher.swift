@@ -192,6 +192,8 @@ public enum WindowSwitcherLayout {
     public static let footerHeight: CGFloat = 1 + footerSpacing + footerContentHeight
     /// 下の操作の案内の高さ
     public static let hintsHeight: CGFloat = 16
+    /// 下の帯（ドラッグで落とす先: ステージと、保存したグループ）の高さ
+    public static let dropBarHeight: CGFloat = 34
     /// いちばん低い高さ（ウインドウが少なくても、見出しと案内が窮屈にならないように）
     public static let minimumOverviewHeight: CGFloat = 220
 
@@ -237,9 +239,11 @@ public enum WindowSwitcherLayout {
     ///   - displayGroupCount: ディスプレイ名付きの枠を出すグループの数
     ///   - showsNotice: 画面収録の許可の案内を出すか
     ///   - showsFooter: 下に、選んでいるウインドウの名前・選んだ数を出すか
+    ///   - showsDropBar: 下に、ドラッグで落とす先の帯（ステージ・グループ）を出すか
     public static func overviewHeight(
         for appearance: WindowSwitcherSettings.Appearance, size: DisplaySize = .medium, sectionCounts: [Int], titledSections: Bool,
-        columns: Int, maximumHeight: CGFloat, displayGroupCount: Int = 0, showsNotice: Bool = false, showsFooter: Bool = true
+        columns: Int, maximumHeight: CGFloat, displayGroupCount: Int = 0, showsNotice: Bool = false, showsFooter: Bool = true,
+        showsDropBar: Bool = false
     ) -> CGFloat {
         var content = CGFloat(displayGroupCount) * (2 * displayGroupInset + displayTitleHeight + displayTitleSpacing)
         for (index, count) in sectionCounts.enumerated() {
@@ -250,6 +254,7 @@ public enum WindowSwitcherLayout {
         var height = inset * 2 + headerHeight + blockSpacing + content
         if showsNotice { height += blockSpacing + noticeHeight }
         if showsFooter { height += blockSpacing + footerHeight }
+        if showsDropBar { height += blockSpacing + dropBarHeight }
         height += blockSpacing + hintsHeight
         return min(max(height.rounded(.up), minimumOverviewHeight), max(minimumOverviewHeight, maximumHeight))
     }
@@ -360,6 +365,11 @@ public enum WindowSwitcherKeyGuide {
         Entry(keys: "↑↓←→・Tab", short: "選ぶ", detail: "選ぶ（⇧Tab で戻る）", isCommand: false, showsInHints: true),
         Entry(keys: "↩", short: "開く", detail: "選んだウインドウに切り替える（修飾キーを離しても）", isCommand: false, showsInHints: true),
         Entry(keys: "space", short: "選んで並べる", detail: "選んでおき、↩ でまとめてステージに並べる", isCommand: false, showsInHints: true),
+        Entry(
+            keys: "ドラッグ", short: "ステージ・グループへ",
+            detail: "いまのデスクトップのウインドウを、下の帯のステージ（入れて閉じる）かグループ（足す）へ落とす。印の付いたものをつかむと、まとめて運ぶ。スイッチャーの中をマウスで押したら、修飾キーを離しても決まらない（↩・esc で閉じる）",
+            isCommand: false, showsInHints: false
+        ),
         Entry(keys: "文字", short: "絞り込み", detail: "名前で絞り込む（⌫ で 1 文字戻す）", isCommand: false, showsInHints: true),
         Entry(keys: "1〜9", short: "デスクトップへ", detail: "そのデスクトップへ移る（デスクトップ別のとき）", isCommand: false, showsInHints: false),
         Entry(keys: "esc", short: "閉じる", detail: "閉じる（絞り込み・選んだものがあれば、先にそれを消す）", isCommand: false, showsInHints: true),

@@ -10,9 +10,12 @@ struct GroupEditorView: View {
     let onSave: (StageGroup) -> Void
     let onCancel: () -> Void
     @State private var group: StageGroup
+    /// 開いたときのメンバーの数（外して空にしたときは、保存でグループを解消するので、保存できるようにする）
+    private let originalMemberCount: Int
 
     init(group: StageGroup, stage: StageController, onSave: @escaping (StageGroup) -> Void, onCancel: @escaping () -> Void) {
         _group = State(initialValue: group)
+        originalMemberCount = group.members.count
         self.stage = stage
         self.onSave = onSave
         self.onCancel = onCancel
@@ -48,7 +51,7 @@ struct GroupEditorView: View {
                 .frame(width: 220)
             }
 
-            EditorFooter(canSave: !group.members.isEmpty, onCancel: onCancel) { onSave(group) }
+            EditorFooter(canSave: !group.members.isEmpty || originalMemberCount > 0, onCancel: onCancel) { onSave(group) }
         }
         .padding(16)
         .frame(width: 600)
@@ -166,8 +169,10 @@ final class GroupEditorWindowController {
             group: group,
             stage: stage,
             onSave: { [weak self] edited in
-                self?.stage.updateGroup(edited)
-                self?.window.close()
+                // 外して 1 つ以下になるときは、解消するか確かめる。キャンセルしたら、編集画面を開いたままにする
+                // 出すデスクトップは、開いている間についていった先のまま（決まりは PinstageCore の updateGroup）
+                guard let self, stage.updateGroup(edited) else { return }
+                window.close()
             },
             onCancel: { [weak self] in self?.window.close() }
         )

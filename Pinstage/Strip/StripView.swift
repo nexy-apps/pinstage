@@ -116,20 +116,45 @@ private struct ResizeEdge: View {
                 .opacity(isHovering || isDragging ? 0.8 : 0)
         }
         .frame(maxHeight: .infinity)
+        // Pinstage が前面のアプリのときは、これで形が変わる
         .pointerStyle(.frameResize(position: strip.edge == .right ? .leading : .trailing))
-        .onHover { isHovering = $0 }
+        // ウインドウバーは前面に出ないパネルで、Pinstage もふつうは前面のアプリではないので、macOS はポインタの形を切り替えない。
+        // ポインタを乗せている間は、動かすたびに自分で形を当てる（ほかのアプリが形を戻しても、すぐ当て直す）。
+        // 前面にないアプリの NSCursor.set は、そのままでは効かないので、先に SkyLight で受け付けてもらう
+        .onContinuousHover { phase in
+            switch phase {
+            case .active:
+                isHovering = true
+                SkyLight.allowCursorChangesInBackground()
+                resizeCursor.set()
+            case .ended:
+                isHovering = false
+                if !isDragging { NSCursor.arrow.set() }
+            }
+        }
         .gesture(
             DragGesture(minimumDistance: 1, coordinateSpace: .global)
                 .onChanged { _ in
                     isDragging = true
+                    // ドラッグしている間は、縁からはみ出しても形を保つ
+                    resizeCursor.set()
                     // ウインドウの幅が変わってもずれないよう、画面の座標のポインタの位置で決める
                     strip.resize(toPointerX: NSEvent.mouseLocation.x)
                 }
                 .onEnded { _ in
                     isDragging = false
                     strip.endResize()
+                    if !isHovering { NSCursor.arrow.set() }
                 }
         )
+        .onDisappear {
+            if isHovering || isDragging { NSCursor.arrow.set() }
+        }
         .help("ドラッグして幅を変える")
+    }
+
+    /// 左右に幅を変えるポインタ（つまみのある縁の向き。右のストリップなら左の縁）
+    private var resizeCursor: NSCursor {
+        .frameResize(position: strip.edge == .right ? .left : .right, directions: .all)
     }
 }

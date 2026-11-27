@@ -1,13 +1,19 @@
 DERIVED_DATA := build/DerivedData
+# ビルドしたアプリ（ビルドのフォルダの中。開発のビルドとして起動・登録するのは、下の DEV_APP に写したもの）
 APP := $(DERIVED_DATA)/Build/Products/Debug/Pinstage.app
 RELEASE_APP := $(DERIVED_DATA)/Build/Products/Release/Pinstage.app
 INSTALL_BUILT_APP := $(DERIVED_DATA)/Build/Products/Install/Pinstage.app
 # 開発のビルド（make build・run・install）の ID。make stop が、配る版を止めないよう、この ID のアプリだけを終了する。
 # ID と画面の名前は project.yml の Debug・Install で決めている（変えるときは、ここも合わせる。決まりは共通のノート「Pinシリーズの決まり」の 3 の節）
 DEV_BUNDLE_ID := app.nexy.Pinstage.dev
-# make install で入れる場所（開発のビルドなので、配る版の Pinstage.app とぶつからないよう「Pinstage Dev.app」の名前で入れる）
+# Pinstage Dev が動いているか（シェルの条件に使う。動いていれば成功）
+DEV_RUNNING = lsappinfo find bundleid=$(DEV_BUNDLE_ID) 2>/dev/null | grep -q .
+# 開発のビルドを置く場所（make run・make install のどちらも、ビルドしたものをここの「Pinstage Dev.app」に写して置き換える）。
+# 開発版のアプリをいつも 1 つにし、許可の一覧（ファイルの名前が出る）や Spotlight で、配る版の Pinstage.app と見分けられるようにする。
+# 同じ ID のアプリが 2 か所にあると、どちらが開くか・どちらに許可を与えたかが分かりにくいので、Launch Services にはここだけを登録する。
+# ファイルの名前を決める PRODUCT_NAME は変えない（Pinstage.app を前提にした手順が動かなくなるため。決まりは共通のノート「Pinシリーズの決まり」の 3 の節）
 INSTALL_DIR ?= /Applications
-INSTALL_APP := $(INSTALL_DIR)/Pinstage Dev.app
+DEV_APP := $(INSTALL_DIR)/Pinstage Dev.app
 # アプリの版（project.yml の CFBundleShortVersionString）。1.0.0 より前は β 版
 VERSION := $(shell sed -n 's/.*CFBundleShortVersionString: *"\(.*\)"/\1/p' project.yml)
 # β 版として出すときは BETA=1 のように番号を渡す（タグは v0.1.0-beta.1、GitHub ではプレリリースにする）
@@ -41,10 +47,18 @@ RELEASE_SIGN_IDENTITY = $(or $(shell sed -n 's/^ *CODE_SIGN_IDENTITY: *\([0-9A-F
 	$(error project.yml の Release に、CODE_SIGN_IDENTITY（証明書の SHA-1）がありません))
 # 金庫の中の、更新ファイルに署名する鍵のアカウント名（Sparkle の道具に渡す）
 SPARKLE_ACCOUNT := nexy-release
-# Launch Services（アプリの場所とアイコンを覚えている macOS の仕組み）に、アプリを登録し直す道具
+# Launch Services（アプリの場所とアイコンを覚えている macOS の仕組み）に、アプリを登録し直す道具。
+# make run・make install はアプリを DEV_APP にファイルごとに写すので、写している途中（署名のファイルがまだない）のアプリを macOS が先に見つけて、
+# 「開けないアプリ」（アイコンに 🚫 の印）と覚えることがある。写し終えてから登録し直して、正しい状態に替える。
+# アイコンを変えたあとも、Finder・Dock が前のアイコン（アイコンを入れる前の仮のもの）を出し続けないようにする役目もある
 LSREGISTER := /System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister
 # $(call register_app,アプリの場所): アプリを Launch Services に登録し直す（失敗しても止めない）
 register_app = touch "$(1)"; $(LSREGISTER) -f "$(1)" >/dev/null 2>&1 || true
+# $(call unregister_app,アプリの場所): アプリの Launch Services の登録を外す（登録されていなくても止めない）
+unregister_app = $(LSREGISTER) -u "$(1)" >/dev/null 2>&1 || true
+# $(call place_dev_app,ビルドしたアプリ): DEV_APP に写して置き換え、Launch Services には DEV_APP だけを登録する（ビルドのフォルダのものは外す）
+place_dev_app = mkdir -p "$(DEV_APP)" && rsync -a --delete "$(1)/" "$(DEV_APP)/" && \
+	{ $(call unregister_app,$(APP)); $(call unregister_app,$(INSTALL_BUILT_APP)); $(call register_app,$(DEV_APP)); }
 # xcodebuild に足す引数（ふだんは空）
 XCODEBUILD_FLAGS ?=
 
@@ -200,38 +214,54 @@ update-test: generate dev-signing
 update-test-log:
 	./scripts/update-test-log.sh
 
-# 動いている Pinstage Dev を終了してから、ビルドした新しい版を起動する。
+# 開発用（Debug。速くビルドできる）にビルドし、動いている Pinstage Dev を終了してから、DEV_APP に置き換えて起動する
+# （make install と同じ場所なので、中身は最後に流した make run か make install のもの）。
 # 終了した直後は、Launch Services がまだ「動いている」と思っていて、open が
 # 「_LSOpenURLsWithCompletionHandler() failed with error -600」で失敗することがあるので、少し待ってやり直す
+# （何度やっても起動できないときだけ、最後の open のエラーをそのまま出す）
 run: build stop
-	@$(call register_app,$(APP))
-	@for i in 1 2 3 4 5; do open "$(APP)" 2>/dev/null && exit 0; sleep 0.5; done; open "$(APP)"
+	@$(call place_dev_app,$(APP))
+	@opened=""; for i in 1 2 3 4 5; do open "$(DEV_APP)" 2>/dev/null && { opened=1; break; }; sleep 0.5; done; \
+	[ -n "$$opened" ] || open "$(DEV_APP)"
+	@echo "$(DEV_APP) を起動しました（版 $(VERSION)）"
 
-# 動いている開発のビルド（Pinstage Dev）を終了する（配る版の Pinstage は止めない。最大 8 秒待つ）
+# 動いている開発のビルド（Pinstage Dev）を終了する（配る版の Pinstage は止めない）。
+# 何を止めたかを出し、8 秒たっても終わらなければ強制終了する（終わらないまま make run の open に進むと、
+# 古い Pinstage Dev が前に出るだけで、新しいビルドに入れ替わらないため）。
+# pid は、lsappinfo の「"pid"=123」（前の macOS）と「pid = 123 …」（いまの macOS。同じ行に Arch=… などが続く）の
+# どちらの形からも、数字だけを取る（前は「最後の = のあと」を取っていて、いまの macOS では pid が読めず、止まっていなかった）
 stop:
-	-@for asn in $$(lsappinfo find bundleid=$(DEV_BUNDLE_ID) 2>/dev/null); do \
-		pid=$$(lsappinfo info -only pid "$$asn" 2>/dev/null | sed -n 's/.*=//p'); \
-		[ -n "$$pid" ] && kill "$$pid" 2>/dev/null; \
+	-@pids=""; \
+	for asn in $$(lsappinfo find bundleid=$(DEV_BUNDLE_ID) 2>/dev/null); do \
+		pid=$$(lsappinfo info -only pid "$$asn" 2>/dev/null | sed -n 's/.*pid"* *= *\([0-9][0-9]*\).*/\1/p' | head -1); \
+		[ -n "$$pid" ] && pids="$$pids $$pid"; \
 	done; \
-	for i in $$(seq 1 80); do lsappinfo find bundleid=$(DEV_BUNDLE_ID) 2>/dev/null | grep -q . || break; sleep 0.1; done
+	if [ -z "$$pids" ]; then echo "動いている Pinstage Dev はありません（配る版の Pinstage は止めません）"; exit 0; fi; \
+	echo "Pinstage Dev を終了します（pid$$pids。配る版の Pinstage は止めません）"; \
+	kill $$pids 2>/dev/null; \
+	for i in $$(seq 1 80); do $(DEV_RUNNING) || exit 0; sleep 0.1; done; \
+	echo "8 秒たっても終了しないので、強制終了します（pid$$pids）"; \
+	kill -9 $$pids 2>/dev/null; \
+	for i in $$(seq 1 30); do $(DEV_RUNNING) || exit 0; sleep 0.1; done; \
+	echo "Pinstage Dev を終了できませんでした。アクティビティモニタで終了してから、もう一度流してください" >&2
 
-# 配る版と同じ作り（project.yml の Install）でビルドし、開発のビルドとして「Pinstage Dev.app」の名前でアプリケーションフォルダに入れる
-# （前に入れたものは置き換える。ID は app.nexy.Pinstage.dev・開発用の証明書なので、配る版の Pinstage とは別のアプリとして並ぶ）。
+# 配る版と同じ作り（project.yml の Install）でビルドし、make run と同じ DEV_APP に置き換える（起動はしない）。
+# ID は app.nexy.Pinstage.dev・開発用の証明書なので、配る版の Pinstage とは別のアプリとして並ぶ。
+# make run で入れたものと ID・証明書が同じなので、どちらで入れ直しても許可は引き継がれる。
 # 動いている Pinstage Dev は、ビルドが終わってから止める
 install: install-build stop
-	mkdir -p "$(INSTALL_APP)"
-	rsync -a --delete "$(INSTALL_BUILT_APP)/" "$(INSTALL_APP)/"
-	@$(call register_app,$(INSTALL_APP))
+	@$(call place_dev_app,$(INSTALL_BUILT_APP))
 	@echo ""
-	@echo "$(INSTALL_APP) に入れました。アプリケーションフォルダから Pinstage Dev を開いてください。"
+	@echo "$(DEV_APP) に入れました。アプリケーションフォルダから Pinstage Dev を開いてください。"
 
 install-build: generate dev-signing
 	$(XCODEBUILD) -configuration Install ONLY_ACTIVE_ARCH=NO CODE_SIGN_IDENTITY="$(DEV_SIGN)" build
 	@$(call check_dev_signed,$(INSTALL_BUILT_APP))
 
-# アプリケーションフォルダから Pinstage Dev を消す（グループと設定は残る）
+# アプリケーションフォルダから Pinstage Dev を消す（make run・make install のどちらで入れたものも。グループと設定は残る）
 uninstall: stop
-	rm -rf "$(INSTALL_APP)"
+	@$(call unregister_app,$(DEV_APP))
+	rm -rf "$(DEV_APP)"
 
 # テストを動かす（アプリは起動しない。PinstageCore の swift test で流すので、署名は要らない）。
 # AI の作業環境の砂場では、swift test がそのままでは動かないので、いつも砂場の中でも動く形

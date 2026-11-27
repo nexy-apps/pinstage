@@ -57,6 +57,17 @@ struct StageLibraryGroupTests {
         #expect(!unknown)
     }
 
+    @Test("編集画面で置き換えても、出すデスクトップはいまの値のまま（開いている間についていった先を戻さない）")
+    func updateGroupKeepsDesktop() {
+        var library = StageLibrary()
+        var group = library.addGroup(name: "開発", content: StageGroup.Content(members: [safari], layout: .builtIn(.auto), displayID: "D1", desktopID: "A"))
+        library.setDesktop("B", ofGroup: group.id)
+        group.members = [safari, notes]
+        library.updateGroup(group)
+        #expect(library.groups[0].desktopID == "B")
+        #expect(library.groups[0].members == [safari, notes])
+    }
+
     @Test("名前を変える・消す・ID で探す")
     func renameAndRemove() {
         var library = StageLibrary()
