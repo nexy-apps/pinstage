@@ -6,6 +6,8 @@ INSTALL_BUILT_APP := $(DERIVED_DATA)/Build/Products/Install/Pinstage.app
 # 開発のビルド（make build・run・install）の ID。make stop が、配る版を止めないよう、この ID のアプリだけを終了する。
 # ID と画面の名前は project.yml の Debug・Install で決めている（変えるときは、ここも合わせる。決まりは共通のノート「Pinシリーズの決まり」の 3 の節）
 DEV_BUNDLE_ID := app.nexy.Pinstage.dev
+# Pinstage Dev が動いているか（シェルの条件に使う。動いていれば成功）
+DEV_RUNNING = lsappinfo find bundleid=$(DEV_BUNDLE_ID) 2>/dev/null | grep -q .
 # 開発のビルドを置く場所（make run・make install のどちらも、ビルドしたものをここの「Pinstage Dev.app」に写して置き換える）。
 # 開発版のアプリをいつも 1 つにし、許可の一覧（ファイルの名前が出る）や Spotlight で、配る版の Pinstage.app と見分けられるようにする。
 # 同じ ID のアプリが 2 か所にあると、どちらが開くか・どちらに許可を与えたかが分かりにくいので、Launch Services にはここだけを登録する。
@@ -215,15 +217,29 @@ update-test-log:
 # 「_LSOpenURLsWithCompletionHandler() failed with error -600」で失敗することがあるので、少し待ってやり直す
 run: build stop
 	@$(call place_dev_app,$(APP))
-	@for i in 1 2 3 4 5; do open "$(DEV_APP)" 2>/dev/null && exit 0; sleep 0.5; done; open "$(DEV_APP)"
+	@opened=""; for i in 1 2 3 4 5; do open "$(DEV_APP)" 2>/dev/null && { opened=1; break; }; sleep 0.5; done; \
+	[ -n "$$opened" ] || open "$(DEV_APP)"
+	@echo "$(DEV_APP) を起動しました（版 $(VERSION)）"
 
-# 動いている開発のビルド（Pinstage Dev）を終了する（配る版の Pinstage は止めない。最大 8 秒待つ）
+# 動いている開発のビルド（Pinstage Dev）を終了する（配る版の Pinstage は止めない）。
+# 何を止めたかを出し、8 秒たっても終わらなければ強制終了する（終わらないまま make run の open に進むと、
+# 古い Pinstage Dev が前に出るだけで、新しいビルドに入れ替わらないため）。
+# pid は、lsappinfo の「"pid"=123」（前の macOS）と「pid = 123 …」（いまの macOS。同じ行に Arch=… などが続く）の
+# どちらの形からも、数字だけを取る（前は「最後の = のあと」を取っていて、いまの macOS では pid が読めず、止まっていなかった）
 stop:
-	-@for asn in $$(lsappinfo find bundleid=$(DEV_BUNDLE_ID) 2>/dev/null); do \
-		pid=$$(lsappinfo info -only pid "$$asn" 2>/dev/null | sed -n 's/.*=//p'); \
-		[ -n "$$pid" ] && kill "$$pid" 2>/dev/null; \
+	-@pids=""; \
+	for asn in $$(lsappinfo find bundleid=$(DEV_BUNDLE_ID) 2>/dev/null); do \
+		pid=$$(lsappinfo info -only pid "$$asn" 2>/dev/null | sed -n 's/.*pid"* *= *\([0-9][0-9]*\).*/\1/p' | head -1); \
+		[ -n "$$pid" ] && pids="$$pids $$pid"; \
 	done; \
-	for i in $$(seq 1 80); do lsappinfo find bundleid=$(DEV_BUNDLE_ID) 2>/dev/null | grep -q . || break; sleep 0.1; done
+	if [ -z "$$pids" ]; then echo "動いている Pinstage Dev はありません（配る版の Pinstage は止めません）"; exit 0; fi; \
+	echo "Pinstage Dev を終了します（pid$$pids。配る版の Pinstage は止めません）"; \
+	kill $$pids 2>/dev/null; \
+	for i in $$(seq 1 80); do $(DEV_RUNNING) || exit 0; sleep 0.1; done; \
+	echo "8 秒たっても終了しないので、強制終了します（pid$$pids）"; \
+	kill -9 $$pids 2>/dev/null; \
+	for i in $$(seq 1 30); do $(DEV_RUNNING) || exit 0; sleep 0.1; done; \
+	echo "Pinstage Dev を終了できませんでした。アクティビティモニタで終了してから、もう一度流してください" >&2
 
 # 配る版と同じ作り（project.yml の Install）でビルドし、make run と同じ DEV_APP に置き換える（起動はしない）。
 # ID は app.nexy.Pinstage.dev・開発用の証明書なので、配る版の Pinstage とは別のアプリとして並ぶ。
