@@ -116,10 +116,10 @@ git clone https://github.com/nexy-apps/pinstage.git
 cd pinstage
 make cert   # 開発用の署名の証明書を作る（最初に 1 回だけ。Mac のログインパスワードを聞かれる）
 make setup  # push の前に自動テストを流す git hooks を有効にする（最初に 1 回だけ）
-make run    # ビルドして起動する
+make run    # ビルドして /Applications/Pinstage Dev.app に置き、起動する
 ```
 
-自分でビルドしたものは「Pinstage Dev」という名前の開発のビルドです（ID は `app.nexy.Pinstage.dev`、URL スキームは `pinstage-dev://`）。配る版の Pinstage とは別のアプリとして扱われ、更新の確認はしません。グループと型（`library.json`）は、配る版と同じファイルを使います。
+自分でビルドしたものは「Pinstage Dev」という名前の開発のビルドです（ID は `app.nexy.Pinstage.dev`、URL スキームは `pinstage-dev://`）。`make run`・`make install` のどちらも、`/Applications/Pinstage Dev.app` に置きます（開発版のアプリはいつも 1 つで、システム設定の許可の一覧にも「Pinstage Dev.app」と出るので、配る版の「Pinstage.app」と見分けられます）。配る版の Pinstage とは別のアプリとして扱われ、更新の確認はしません。グループと型（`library.json`）は、配る版と同じファイルを使います。
 
 初めて起動すると、アクセシビリティの許可を求められます。ほかのアプリのウインドウを動かすために使います。システム設定 →「プライバシーとセキュリティ」→「アクセシビリティ」で Pinstage Dev をオンにしてください。
 
@@ -137,10 +137,10 @@ macOS は、アプリが同じものかを「アプリの ID ＋ 署名の証明
 |---|---|
 | `make cert` | 開発用の証明書（`nexy Dev Signing`）を作る（最初に一度だけ。作者以外は `DEV_CERT="〇〇 Dev Signing"` で自分の名前にできる） |
 | `make setup` | push の前に自動テストを流す git hooks を有効にする（最初に一度だけ） |
-| `make run` | 動いている Pinstage Dev を終了し、開発用（Debug）にビルドして起動する |
+| `make run` | 開発用（Debug。速くビルドできる）にビルドし、動いている Pinstage Dev を終了して、`/Applications/Pinstage Dev.app` に置き換えて起動する（コードを直しては試すときに） |
 | `make test` | PinstageCore のテストを動かす |
-| `make install` | 配る版と同じ設定でビルドし、`/Applications/Pinstage Dev.app` に入れる（配る版の Pinstage とは別のアプリとして並ぶ） |
-| `make uninstall` | `/Applications/Pinstage Dev.app` を削除する（グループと設定は残る） |
+| `make install` | 配る版と同じ設定でビルドし、`make run` と同じ `/Applications/Pinstage Dev.app` に入れる（起動はしない。配る版に近い形で動きを確かめるときに。配る版の Pinstage とは別のアプリとして並ぶ） |
+| `make uninstall` | `/Applications/Pinstage Dev.app` を削除する（`make run`・`make install` のどちらで入れたものも。グループと設定は残る） |
 | `make dist` | Releases に置く DMG と zip（`dist/Pinstage-<版>.dmg`・`.zip`・`.sha256`）を作る（作者だけ。金庫を開けて、配る版用の証明書で署名する。パスワードを聞かれる） |
 | `make publish` | DMG と zip を作り、GitHub に Release（タグ `v<版>`）を作ってアップロードする（作者だけ）。β 版は `make publish BETA=1`（タグ `v<版>-beta.1`・プレリリース）。zip に金庫の中の鍵で署名し、版の一覧（`appcast.xml`）を作って、版の一覧の置き場所（[nexy-apps.github.io](https://github.com/nexy-apps/nexy-apps.github.io)）に送る（コミット済みで、GitHub の main と同じ状態からだけ動く） |
 | `make update-test` | 更新を、手元で通しで試す（別の ID の試験用アプリ Pinstage UpdateTest を、開発用の証明書で 2 つの版に作り、手元のサーバーから配る。[docs/TESTING.md](docs/TESTING.md)） |
