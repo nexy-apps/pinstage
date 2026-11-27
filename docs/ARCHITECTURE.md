@@ -62,7 +62,7 @@ Pinstage/
 │   ├── StripRowCluster       同じアプリのウインドウのまとまり（となり合った行を、うすい枠でつなぐ。RowJoin・ClusterTray。アイコンの格子では、列の数から折り返しを決め、タイルの間まで枠を伸ばす）
 │   ├── StripGroupList        グループの一覧と行（見本・アイコンだけのときの形・右クリックのメニュー）
 │   ├── GroupMap              グループの見本（枠ごとに、入るアプリのアイコン）。枠の番号ごとの色（SlotPalette）。グループの編集画面でも使う
-│   ├── StripReorder          行をドラッグして並べ替える（ReorderDrag・落とす位置の線。同じアプリのまとまりは一緒に動かす。行の枠は、ずらし（offset）の外側で測る）
+│   ├── StripReorder          クリックかドラッグかの見分け（TapOrDrag）・行をドラッグして並べ替える（ReorderDrag・落とす位置の線。同じアプリのまとまりは一緒に動かす。行の枠は、ずらし（offset）の外側で測る）
 │   ├── GroupMemberDrag       見本のアイコンをドラッグして、グループから外す・移す・並び順を変える（GroupDropTargets・MemberDrag）
 │   ├── StripLayoutControls   上の帯の並べ方のボタン（型・型を作る）と、グループを作る ＋（ステージを保存・見えている画面を記録）
 │   ├── StripStyle            ウインドウバーの見た目の共通の部品（上の帯・アイコンのボタン・見出し・検索の欄・欄の地）

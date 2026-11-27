@@ -168,7 +168,7 @@ private struct GroupRow: View {
         .overlay(
             RoundedRectangle(cornerRadius: 8, style: .continuous)
                 .strokeBorder(Color.accentColor, lineWidth: 2)
-                .background(Color.accentColor.opacity(0.12), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                .background(StripStyle.dropTargetFill, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
                 .opacity(isDropTarget ? 1 : 0)
                 .allowsHitTesting(false)
         )

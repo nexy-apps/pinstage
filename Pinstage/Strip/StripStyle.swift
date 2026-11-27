@@ -14,6 +14,8 @@ enum StripStyle {
     static let rowHoverFill = Color.primary.opacity(0.09)
     /// ステージに出しているものの地の色
     static let selectedFill = Color.accentColor.opacity(0.16)
+    /// ドラッグしているものを落とせる先の、ポインタの下の地（ウインドウバーのグループの行・スイッチャーの下の帯で同じ）
+    static let dropTargetFill = Color.accentColor.opacity(0.12)
 }
 
 /// 小さなアイコンのボタンの中身（大きさをそろえ、ポインタを乗せたら背景を出す。isActive なら色を付ける）

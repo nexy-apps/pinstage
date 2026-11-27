@@ -91,6 +91,74 @@ enum ReorderLayout {
 }
 
 /// 行をドラッグして、一覧の中なら並べ替え、ストリップの外なら onDropOutside。動かさずに離したらクリック
+/// 動かさずに離したらクリック、少し動かしたらドラッグとして見分ける（ウインドウバーの行・ウインドウスイッチャーの項目で同じ）
+///
+/// ジェスチャーが途中で終わったとき（onEnded が届かない）・項目が消えたときの後始末もここで行う（onCancelled）。
+/// ドラッグのときは onBegan → onChanged（動かすたび）→ onEnded か onCancelled の順に呼ぶ
+struct TapOrDrag: ViewModifier {
+    /// これより動かしたらドラッグ（それより小さければクリック）
+    static let threshold: CGFloat = 4
+
+    /// 位置を測る座標の名前
+    let space: String
+    let onTap: () -> Void
+    var onBegan: (DragGesture.Value) -> Void = { _ in }
+    let onChanged: (DragGesture.Value) -> Void
+    let onEnded: (DragGesture.Value) -> Void
+    var onCancelled: () -> Void = {}
+    @State private var isDragging = false
+    @GestureState private var tracksGesture = false
+
+    private static func hasMoved(_ value: DragGesture.Value) -> Bool {
+        hypot(value.translation.width, value.translation.height) > threshold
+    }
+
+    func body(content: Content) -> some View {
+        content
+            .gesture(
+                DragGesture(minimumDistance: 0, coordinateSpace: .named(space))
+                    .updating($tracksGesture) { _, tracking, _ in tracking = true }
+                    .onChanged { value in
+                        if !isDragging {
+                            guard Self.hasMoved(value) else { return }
+                            isDragging = true
+                            onBegan(value)
+                        }
+                        onChanged(value)
+                    }
+                    .onEnded { value in
+                        // 動かしたのに途中の知らせが届かなかったときも、ドラッグとして終える
+                        if !isDragging, Self.hasMoved(value) {
+                            isDragging = true
+                            onBegan(value)
+                        }
+                        guard isDragging else {
+                            onTap()
+                            return
+                        }
+                        isDragging = false
+                        onEnded(value)
+                    }
+            )
+            .onChange(of: tracksGesture) {
+                // キャンセルでは onEnded が届かない。正常終了の処理を優先し、その後も残っていれば後始末する
+                guard !tracksGesture, isDragging else { return }
+                DispatchQueue.main.async {
+                    guard !tracksGesture, isDragging else { return }
+                    cancel()
+                }
+            }
+            .onDisappear {
+                if isDragging { cancel() }
+            }
+    }
+
+    private func cancel() {
+        isDragging = false
+        onCancelled()
+    }
+}
+
 struct ReorderDrag: ViewModifier {
     let index: Int
     let count: Int
@@ -111,8 +179,6 @@ struct ReorderDrag: ViewModifier {
     /// ウインドウの行だけ: バーの外にポインタについて動く見本を出し、別のディスプレイのウインドウバーで離したら、そこへ移す
     var windowDrag: WindowDragInfo?
     @State private var offset: CGSize = .zero
-    @State private var didDrag = false
-    @GestureState private var tracksGesture = false
 
     /// いま重ねているグループ（グループに入れられるときだけ）
     private func hoveredGroup(at pointer: CGPoint) -> UUID? {
@@ -120,8 +186,6 @@ struct ReorderDrag: ViewModifier {
         return strip.groupTargets.group(at: point)
     }
 
-    /// これより動かしたらドラッグ（それより小さければクリック）
-    private static let threshold: CGFloat = 4
     /// ウインドウバーから、この幅まではみ出しても並べ替えを続ける（pt）。
     /// 細い帯（アイコン 1 列）では、上下に動かしているつもりでも横に少しはみ出しやすく、はみ出すと線が消えて、離すとステージに出てしまうため
     private static let outsideTolerance: CGFloat = 24
@@ -150,77 +214,70 @@ struct ReorderDrag: ViewModifier {
         return content
             .offset(shift)
             .opacity(offset == .zero ? 1 : 0.85)
-            .gesture(
-                DragGesture(minimumDistance: 0, coordinateSpace: .named(space))
-                    .updating($tracksGesture) { _, tracking, _ in tracking = true }
-                    .onChanged { value in
-                        guard didDrag || hypot(value.translation.width, value.translation.height) > Self.threshold else { return }
-                        didDrag = true
-                        strip.isDragging = true
-                        offset = value.translation
-                        let pointer = NSEvent.mouseLocation
-                        if let windowDrag {
-                            strip.windowDragFeedback?.update(from: strip, pointer: pointer, drag: windowDrag)
-                        }
-                        reorder.drag(index, with: cluster, offset: value.translation)
-                        let group = hoveredGroup(at: pointer)
-                        if onDropOnGroup != nil { strip.groupTargets.hovered = group }
-                        if group != nil {
-                            // グループの上では、並べ替えの線を出さない
-                            reorder.setDropIndex(nil)
-                            trace("グループの上")
-                        } else if isPointerInStrip(pointer) {
-                            let target = reorder.dropIndex(for: value.location, layout: layout, count: count)
-                            // 落とせない位置（同じアプリをまとめているときの、まとまりの中）は、線を出さない
-                            let allowed = canDrop?(target) ?? true
-                            let isNoOp = ListReorder.isNoOp(from: index, dropIndex: target)
-                            reorder.setDropIndex(!allowed || isNoOp ? nil : target)
-                            trace(!allowed ? "落とせない位置 \(target)" : isNoOp ? "動かない位置 \(target)" : "線 \(target)")
-                        } else {
-                            reorder.setDropIndex(nil)
-                            trace("ウインドウバーの外")
-                        }
-                    }
-                    .onEnded { value in
-                        let moved = didDrag || hypot(value.translation.width, value.translation.height) > Self.threshold
-                        let pointer = NSEvent.mouseLocation
-                        let drop = reorder.dropIndex
-                        let group = moved ? hoveredGroup(at: pointer) : nil
-                        // 別のディスプレイのウインドウバーの上で離したか（見本を消す前に、行き先と落とす位置を聞く）
-                        let destination = strip.windowDragFeedback?.destination(from: strip)
-                        resetDrag()
-                        if !moved {
-                            onTap()
-                        } else if let group {
-                            onDropOnGroup?(group)
-                        } else if let destination, let windowDrag {
-                            withAnimation(.snappy(duration: 0.2)) { windowDrag.onDropOnOtherStrip(destination.strip, destination.dropIndex) }
-                        } else if !isPointerInStrip(pointer) {
-                            onDropOutside?()
-                        } else if let drop {
-                            withAnimation(.snappy(duration: 0.2)) { onMove(drop) }
-                        }
-                    }
-            )
-            .onChange(of: tracksGesture) {
-                // キャンセルでは onEnded が届かない。正常終了の処理を優先し、その後も残っていれば消す。
-                if !tracksGesture, didDrag {
-                    DispatchQueue.main.async {
-                        if !tracksGesture, didDrag { resetDrag() }
-                    }
-                }
-            }
-            .onDisappear {
-                if didDrag { resetDrag() }
-            }
+            .modifier(TapOrDrag(
+                space: space,
+                onTap: {
+                    resetDrag()
+                    onTap()
+                },
+                onBegan: { _ in strip.isDragging = true },
+                onChanged: dragChanged,
+                onEnded: dragEnded,
+                onCancelled: resetDrag
+            ))
             // 行の枠は、ずらす前の位置で覚える。必ず、ずらし（offset）の外側で測る。
             // 内側で測ると、ずらした量が枠に入り、ドラッグしている行（と、一緒に動く行）の枠がポインタについて動く。
             // すると、落とす位置の判定が自分の行に引っかかって「動かない位置」になり、線が出ない・ちらつく（行の上半分をつかむと起きる）
             .onGeometryChange(for: CGRect.self) { $0.frame(in: .named(space)) } action: { reorder.frames[index] = $0 }
     }
 
+    /// 動かしている間: 行を動かし、重ねているグループ・落とす位置の線を決める
+    private func dragChanged(_ value: DragGesture.Value) {
+        offset = value.translation
+        let pointer = NSEvent.mouseLocation
+        if let windowDrag {
+            strip.windowDragFeedback?.update(from: strip, pointer: pointer, drag: windowDrag)
+        }
+        reorder.drag(index, with: cluster, offset: value.translation)
+        let group = hoveredGroup(at: pointer)
+        if onDropOnGroup != nil { strip.groupTargets.hovered = group }
+        if group != nil {
+            // グループの上では、並べ替えの線を出さない
+            reorder.setDropIndex(nil)
+            trace("グループの上")
+        } else if isPointerInStrip(pointer) {
+            let target = reorder.dropIndex(for: value.location, layout: layout, count: count)
+            // 落とせない位置（同じアプリをまとめているときの、まとまりの中）は、線を出さない
+            let allowed = canDrop?(target) ?? true
+            let isNoOp = ListReorder.isNoOp(from: index, dropIndex: target)
+            reorder.setDropIndex(!allowed || isNoOp ? nil : target)
+            trace(!allowed ? "落とせない位置 \(target)" : isNoOp ? "動かない位置 \(target)" : "線 \(target)")
+        } else {
+            reorder.setDropIndex(nil)
+            trace("ウインドウバーの外")
+        }
+    }
+
+    /// 離した: グループの上なら入れる・別のディスプレイのウインドウバーなら移す・ウインドウバーの外ならステージに足す・線の位置なら並べ替える
+    private func dragEnded(_ value: DragGesture.Value) {
+        let pointer = NSEvent.mouseLocation
+        let drop = reorder.dropIndex
+        let group = hoveredGroup(at: pointer)
+        // 別のディスプレイのウインドウバーの上で離したか（見本を消す前に、行き先と落とす位置を聞く）
+        let destination = strip.windowDragFeedback?.destination(from: strip)
+        resetDrag()
+        if let group {
+            onDropOnGroup?(group)
+        } else if let destination, let windowDrag {
+            withAnimation(.snappy(duration: 0.2)) { windowDrag.onDropOnOtherStrip(destination.strip, destination.dropIndex) }
+        } else if !isPointerInStrip(pointer) {
+            onDropOutside?()
+        } else if let drop {
+            withAnimation(.snappy(duration: 0.2)) { onMove(drop) }
+        }
+    }
+
     private func resetDrag() {
-        didDrag = false
         offset = .zero
         strip.isDragging = false
         reorder.finishDrag()
