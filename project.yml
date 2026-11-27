@@ -1,11 +1,17 @@
 # XcodeGen の設定。`xcodegen generate` で Pinstage.xcodeproj を作る
 name: Pinstage
 options:
-  bundleIdPrefix: app.pinstage
+  bundleIdPrefix: app.nexy
   deploymentTarget:
     macOS: "26.0"
   createIntermediateGroups: true
   developmentLanguage: ja
+
+# ビルドの設定は 3 つ。Install は make install 用で、配る版と同じ最適化（release）のまま、開発のビルドとして入れる（Pinshelf と同じ）
+configs:
+  Debug: debug
+  Release: release
+  Install: release
 
 settings:
   base:
@@ -37,27 +43,29 @@ targets:
     info:
       path: Pinstage/Info.plist
       properties:
-        CFBundleDisplayName: Pinstage
+        # 画面に出る名前。配る版は Pinstage、開発のビルドは Pinstage Dev（下の settings の PINSTAGE_DISPLAY_NAME で分ける）
+        CFBundleDisplayName: $(PINSTAGE_DISPLAY_NAME)
         CFBundleDevelopmentRegion: ja
         # 日本語のアプリだと宣言する（しないと、文字の欄の右クリックなど、macOS の部品が英語で出る）
         CFBundleLocalizations:
           - ja
         # アプリの版。1.0.0 より前は β 版（設定画面にも「0.1.0（β 版）」のように出る）。出すたびに上げる。CFBundleVersion（ビルド番号）も 1 つずつ上げる
-        CFBundleShortVersionString: "0.3.0"
-        CFBundleVersion: "5"
+        CFBundleShortVersionString: "0.1.0"
+        CFBundleVersion: "1"
         LSApplicationCategoryType: public.app-category.productivity
         # メニューバーに常駐し、Dock には出さない
         LSUIElement: true
         NSHumanReadableCopyright: ""
-        # pinstage://… の URL で操作できるようにする（自動化。ランチャーのアプリ・ボタン操作のデバイス・ターミナルの open など）
+        # pinstage://… の URL で操作できるようにする（自動化。ランチャーのアプリ・ボタン操作のデバイス・ターミナルの open など）。
+        # 開発のビルドは pinstage-dev://（配る版と両方が pinstage:// を名乗ると、どちらが開くか決まらないため。下の settings の PINSTAGE_URL_SCHEME）
         CFBundleURLTypes:
-          - CFBundleURLName: app.pinstage.Pinstage
+          - CFBundleURLName: $(PRODUCT_BUNDLE_IDENTIFIER)
             CFBundleURLSchemes:
-              - pinstage
-        # 更新（Sparkle）。版の一覧（appcast.xml）の場所
-        SUFeedURL: https://raw.githubusercontent.com/yzanbo/pinstage/main/appcast.xml
-        # 更新ファイルの署名を確かめる公開鍵（Pin シリーズで共通の鍵。Pinshelf と同じ値。空にすると、更新の機能を出さない）
-        SUPublicEDKey: "fIyKq+2V6b4ohDcJu6T86VEbZV01mUdv7mWw5IE7cpY="
+              - $(PINSTAGE_URL_SCHEME)
+        # 更新（Sparkle）。版の一覧（appcast.xml）の場所。組織 nexy-apps の GitHub Pages に置く（配ったあとは変えない）
+        SUFeedURL: https://nexy-apps.github.io/pinstage/appcast.xml
+        # 更新ファイルの署名を確かめる公開鍵（下の settings の PINSTAGE_UPDATE_PUBLIC_KEY。空のビルドでは、更新の機能を出さない）
+        SUPublicEDKey: $(PINSTAGE_UPDATE_PUBLIC_KEY)
         # 新しい版を自動で確かめる（1 時間に 1 回。Sparkle が受け付けるいちばん短い間隔で、VS Code と同じ。設定の「一般」で切れる）
         SUEnableAutomaticChecks: true
         SUScheduledCheckInterval: 3600
@@ -69,11 +77,15 @@ targets:
         com.apple.security.cs.disable-library-validation: true
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: app.pinstage.Pinstage
+        # アプリの ID。配る版は app.nexy.Pinstage、開発のビルドは後ろに .dev を付ける（決まりは共通のノート「Pinシリーズの決まり」）
+        PRODUCT_BUNDLE_IDENTIFIER: app.nexy.Pinstage
         PRODUCT_NAME: Pinstage
-        # 開発中はその場の署名（自分の Mac で動かす用）。make cert で作った「Pinstage Dev」があれば Makefile がそれを使う
+        PINSTAGE_DISPLAY_NAME: Pinstage
+        PINSTAGE_URL_SCHEME: pinstage
+        # 更新ファイルの署名を確かめる公開鍵（Pin シリーズで共通。秘密鍵は、作者の金庫の中。アカウント名 nexy-release）
+        PINSTAGE_UPDATE_PUBLIC_KEY: "btZMA9m6IhHTFewQG183f6jcLXfvO+GlDfEzWSmZZ28="
+        # 署名は、自分で作った証明書で行う（Apple の Developer ID は使わない）。証明書は下の configs で分ける
         CODE_SIGN_STYLE: Manual
-        CODE_SIGN_IDENTITY: "-"
         DEVELOPMENT_TEAM: ""
         # ほかのアプリのウインドウを動かす（アクセシビリティの API）ため、App Sandbox は使わない
         ENABLE_APP_SANDBOX: NO
@@ -85,11 +97,27 @@ targets:
         # アプリのアイコン（scripts/make-app-icon.swift で描いて、make icon で書き出す）
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
       configs:
-        # 自前の証明書（Pinstage Dev）で署名しても Debug の dylib の読み込みを断られないよう、Debug だけ Hardened Runtime を切る
+        # 開発のビルド（make build・make run）: 別の ID・別の名前・別の URL スキーム・開発用の証明書。更新の機能は出さない（公開鍵を空にする）。
+        # Debug ではアプリのコードを Pinstage.debug.dylib に分けて読み込む。
+        # 自前の証明書で署名しても読み込みを断られないよう、Debug だけ Hardened Runtime を切る
         Debug:
+          <<: &dev
+            PRODUCT_BUNDLE_IDENTIFIER: app.nexy.Pinstage.dev
+            PINSTAGE_DISPLAY_NAME: Pinstage Dev
+            PINSTAGE_URL_SCHEME: pinstage-dev
+            PINSTAGE_UPDATE_PUBLIC_KEY: ""
+            CODE_SIGN_IDENTITY: nexy Dev Signing
           ENABLE_HARDENED_RUNTIME: NO
-        # 配る版には、デバッガをつなぐための許可（get-task-allow）を入れない（何もしないと、Xcode がビルドのときに足す）
+        # make install: 配る版と同じ作り（最適化・Hardened Runtime・get-task-allow なし）で、ID・名前・URL スキーム・証明書は開発のビルドと同じ
+        Install:
+          <<: *dev
+          CODE_SIGN_INJECT_BASE_ENTITLEMENTS: NO
+        # 配る版: 配る版用の証明書（nexy Release Signing。作者の金庫の中）。名前は誰でも同じものを作れるので、SHA-1 で選ぶ
+        # （make dist もここから読む）。make dist が金庫を開けてから使う。Xcode から直接ビルドすると、
+        # 金庫が検索リストにないので「No certificate matching …」で止まる（アドホック署名にはならない）。
+        # デバッガをつなぐための許可（get-task-allow）を入れない（何もしないと、Xcode がビルドのときに足す）
         Release:
+          CODE_SIGN_IDENTITY: F84FBC463E4889FC6FED2DEF2DC27A9310DB57FC
           CODE_SIGN_INJECT_BASE_ENTITLEMENTS: NO
 
 schemes:

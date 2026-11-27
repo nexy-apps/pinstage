@@ -1,0 +1,12 @@
+#!/bin/sh
+# GitHub に送る前（git push の前）に、自動テストを流す（make setup で有効になる）。
+# テストが通らなければ、送らずに止める。決まりは、共通のノート「Pinシリーズの決まり」の 6 の節。
+# AI の作業環境（砂場）で動く形にするのは、make test の側で行う。AI は --no-verify で飛ばさない。
+set -e
+cd "$(git rev-parse --show-toplevel)"
+
+echo "push の前に、自動テストを流しています（make test）…"
+if ! /usr/bin/make test; then
+  echo "自動テストが通らないので、push を止めました。直してから、もう一度 push してください。" >&2
+  exit 1
+fi

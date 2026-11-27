@@ -546,7 +546,7 @@ enum ReadmeImages {
             context.addPath(CGPath(roundedRect: field, cornerWidth: 7, cornerHeight: 7, transform: nil))
             context.fillPath()
             withAppKit {
-                let address = text("github.com/yzanbo/pinstage", size: 11, color: .gray)
+                let address = text("github.com/nexy-apps/pinstage", size: 11, color: .gray)
                 address.draw(at: CGPoint(x: field.midX - address.size().width / 2, y: field.midY - address.size().height / 2))
             }
             lines(in: body, top: toolbar.minY - 24)

@@ -6,16 +6,19 @@ import SwiftUI
 struct AutomationSettingsView: View {
     let stage: StageController
 
+    /// 動いているアプリの URL スキーム（配る版は pinstage、開発のビルドは pinstage-dev）
+    private static let scheme = Bundle.main.urlScheme
+
     /// グループ以外の操作の URL
     private static let commandURLs: [(title: String, url: String)] = [
-        ("ウインドウバーを切り替える", "pinstage://strip/toggle"),
-        ("ウインドウバーを出す", "pinstage://strip/show"),
-        ("ウインドウバーを隠す", "pinstage://strip/hide"),
-        ("検索の欄を出す", "pinstage://search"),
-        ("次のグループを呼び出す", "pinstage://group/next"),
-        ("前のグループを呼び出す", "pinstage://group/previous"),
-        ("ステージをグループとして保存", "pinstage://save?name=名前"),
-    ]
+        ("ウインドウバーを切り替える", "strip/toggle"),
+        ("ウインドウバーを出す", "strip/show"),
+        ("ウインドウバーを隠す", "strip/hide"),
+        ("検索の欄を出す", "search"),
+        ("次のグループを呼び出す", "group/next"),
+        ("前のグループを呼び出す", "group/previous"),
+        ("ステージをグループとして保存", "save?name=名前"),
+    ].map { (title: $0.0, url: "\(scheme)://\($0.1)") }
 
     var body: some View {
         SettingsPane {
@@ -33,7 +36,7 @@ struct AutomationSettingsView: View {
 
             Section {
                 ForEach(stage.library.groups) { group in
-                    URLRow(title: group.name, url: PinstageURL.groupURL(name: group.name)?.absoluteString ?? "")
+                    URLRow(title: group.name, url: PinstageURL.groupURL(name: group.name, scheme: Self.scheme)?.absoluteString ?? "")
                 }
                 if stage.library.groups.isEmpty {
                     SettingsNote("グループを保存すると、ここにグループを呼び出す URL が並びます。")
