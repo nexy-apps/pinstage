@@ -119,11 +119,13 @@ private struct ResizeEdge: View {
         // Pinstage が前面のアプリのときは、これで形が変わる
         .pointerStyle(.frameResize(position: strip.edge == .right ? .leading : .trailing))
         // ウインドウバーは前面に出ないパネルで、Pinstage もふつうは前面のアプリではないので、macOS はポインタの形を切り替えない。
-        // ポインタを乗せている間は、動かすたびに自分で形を当てる（ほかのアプリが形を戻しても、すぐ当て直す）
+        // ポインタを乗せている間は、動かすたびに自分で形を当てる（ほかのアプリが形を戻しても、すぐ当て直す）。
+        // 前面にないアプリの NSCursor.set は、そのままでは効かないので、先に SkyLight で受け付けてもらう
         .onContinuousHover { phase in
             switch phase {
             case .active:
                 isHovering = true
+                SkyLight.allowCursorChangesInBackground()
                 resizeCursor.set()
             case .ended:
                 isHovering = false
