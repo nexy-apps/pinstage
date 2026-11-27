@@ -181,11 +181,15 @@ extension StageLibrary {
     }
 
     /// 編集したグループで、同じ ID のグループを置き換える（名前が空なら、前の名前のまま）。置き換えたら true
+    ///
+    /// 出すデスクトップは、いまの値のまま（右クリックの「出すデスクトップ」と、メンバーについていくときだけ変える。
+    /// 編集画面を開いている間についていった先を、開いたときの値に戻さないように）
     @discardableResult
     public mutating func updateGroup(_ group: StageGroup) -> Bool {
         guard let index = groupIndex(id: group.id) else { return false }
         var edited = group
         edited.name = GroupNaming.normalized(group.name) ?? groups[index].name
+        edited.desktopID = groups[index].desktopID
         groups[index] = edited
         return true
     }

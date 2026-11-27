@@ -156,7 +156,7 @@ private struct GroupRow: View {
             if strip.isCompact {
                 GroupIconTile(
                     group: group, running: running, shortcut: shortcutLabel, isRecalling: stage.recallingGroupID == group.id,
-                    isSmall: stage.stripSettings.iconSize == .small, memberDrag: memberDrag
+                    isSmall: stage.stripSettings.iconSize == .small, splitBadge: desktopStatus.badge, memberDrag: memberDrag
                 )
             } else if strip.isHorizontal {
                 barRow(running: running)
@@ -195,6 +195,10 @@ private struct GroupRow: View {
             }
             layoutMenu
             desktopMenu
+            // メンバーが別のデスクトップに分かれているときだけ
+            if desktopStatus.isSplit {
+                Button("別のデスクトップのメンバーを外す") { stage.removeStrayMembers(ofGroup: group.id) }
+            }
             Button("いまのステージで上書き保存") { stage.overwriteGroup(group.id, on: screen) }
                 .disabled(stage.stage(on: screen).selection.isEmpty)
             Button("見えている画面で上書き記録") { stage.rerecordGroup(group.id, on: screen) }
@@ -338,8 +342,16 @@ private struct GroupRow: View {
         ShortcutAction.group(at: index).flatMap { shortcuts.shortcut(for: $0) }?.displayString
     }
 
+    /// メンバーが、このグループを出すデスクトップにどれだけいるか（分かれた印）
+    private var desktopStatus: GroupDesktopStatus {
+        stage.desktopStatus(of: group)
+    }
+
     @ViewBuilder
     private var trailing: some View {
+        if let badge = desktopStatus.badge {
+            GroupSplitBadge(badge: badge, strays: strayLines) { stage.removeStrayMembers(ofGroup: group.id) }
+        }
         if stage.recallingGroupID == group.id {
             ProgressView().controlSize(.small)
         } else if let action = ShortcutAction.group(at: index), let shortcut = shortcuts.shortcut(for: action) {
@@ -349,15 +361,46 @@ private struct GroupRow: View {
         }
     }
 
-    /// ポインタを乗せたときに出す中身の一覧（番号は並べる順番。大きい番号ほど前面）
+    /// ポインタを乗せたときに出す中身の一覧（番号は並べる順番。大きい番号ほど前面）。
+    /// メンバーが別のデスクトップに分かれているときは、どのメンバーがどのデスクトップにいるかも添える
     private func helpText(running: Set<String>) -> String {
+        let status = desktopStatus
         let lines = group.members.enumerated().map { index, member in
-            let app = AppIcons.name(for: member.bundleID)
-            let title = member.title.isEmpty ? "" : "「\(member.title)」"
             let note = running.contains(member.bundleID) ? "" : "（起動していません。呼び出すと起動します）"
-            return "\(index + 1). \(app)\(title)\(note)"
+            let desktop = status.isSplit ? desktopLabel(status, at: index).map { "・\($0)" } ?? "" : ""
+            return "\(index + 1). \(memberLabel(member))\(note)\(desktop)"
         }
-        return (["\(group.name)・\(stage.layoutTitle(group.layout))"] + lines).joined(separator: "\n")
+        var header = ["\(group.name)・\(stage.layoutTitle(group.layout))"]
+        if let badge = status.badge {
+            let here = status.desktopID.flatMap(stage.desktopName(forDesktopID:)) ?? "このグループのデスクトップ"
+            header.append("メンバーが別のデスクトップに分かれています（\(here)にいるのは \(badge)）。右クリックか印から、別のデスクトップのメンバーを外せます")
+        }
+        return (header + lines).joined(separator: "\n")
+    }
+
+    /// メンバーの名前（「Safari「資料」」）
+    private func memberLabel(_ member: WindowSignature) -> String {
+        AppIcons.name(for: member.bundleID) + (member.title.isEmpty ? "" : "「\(member.title)」")
+    }
+
+    /// その番号のメンバーのいる所の名前（ポインタを乗せたときの説明・分かれた印のメニュー）。
+    /// 状態は読み直したときに求めたものなので、番号が合わなければ nil
+    private func desktopLabel(_ status: GroupDesktopStatus, at index: Int) -> String? {
+        guard status.members.indices.contains(index) else { return nil }
+        return switch status.members[index] {
+        case .desktop(let id): stage.desktopName(forDesktopID: id) ?? "別のデスクトップ"
+        case .allDesktops: "すべてのデスクトップ"
+        case .unknown: "開いていない・いる所が分からない"
+        }
+    }
+
+    /// 別のデスクトップにいるメンバー（分かれた印のメニューに並べる）
+    private var strayLines: [String] {
+        let status = desktopStatus
+        return status.strayIndices.compactMap { index in
+            guard group.members.indices.contains(index), let desktop = desktopLabel(status, at: index) else { return nil }
+            return "\(memberLabel(group.members[index]))・\(desktop)"
+        }
     }
 }
 
@@ -369,6 +412,8 @@ private struct GroupIconTile: View {
     let isRecalling: Bool
     /// アイコンの並びのアイコンが小さいか（細い帯の幅に合わせて、タイルも小さくする）
     var isSmall = false
+    /// メンバーが別のデスクトップに分かれているときの印（「1/2」。分かれていなければ nil）
+    var splitBadge: String?
     var memberDrag: MemberDragContext?
 
     /// タイルの一辺と、中のアイコンの一辺
@@ -392,6 +437,18 @@ private struct GroupIconTile: View {
                 }
             }
             .frame(width: tileSize, height: tileSize)
+            // 分かれた印は、タイルの右上の角に小さく重ねる（操作は右クリックから）
+            .overlay(alignment: .topTrailing) {
+                if let splitBadge {
+                    Text(splitBadge)
+                        .font(.system(size: 8, weight: .semibold).monospacedDigit())
+                        .padding(.horizontal, 3)
+                        .background(Capsule().fill(.orange.opacity(0.85)))
+                        .foregroundStyle(.white)
+                        .offset(x: 4, y: -4)
+                        .allowsHitTesting(false)
+                }
+            }
             if let shortcut {
                 Text(shortcut)
                     .font(.system(size: 9).monospaced())
@@ -441,5 +498,32 @@ private struct HoverRowBackground: ViewModifier {
             .contentShape(Rectangle())
             .onHover { isHovering = $0 }
             .animation(.easeOut(duration: 0.12), value: isHovering)
+    }
+}
+
+/// メンバーが別のデスクトップに分かれているときの印（「1/2」= このグループを出すデスクトップにいる数 / 数えた数）。
+/// 押すと、別のデスクトップにいるメンバーと「別のデスクトップのメンバーを外す」を出す（勝手には直さない）
+private struct GroupSplitBadge: View {
+    let badge: String
+    /// 別のデスクトップにいるメンバー（「Safari「資料」・デスクトップ 2」）
+    let strays: [String]
+    let onRemove: () -> Void
+
+    var body: some View {
+        Menu {
+            Section("別のデスクトップにいるメンバー") {
+                ForEach(Array(strays.enumerated()), id: \.offset) { _, line in
+                    Text(line)
+                }
+            }
+            Button("別のデスクトップのメンバーを外す", action: onRemove)
+        } label: {
+            DesktopBadge.otherDesktop(badge)
+        }
+        .menuStyle(.button)
+        .buttonStyle(.plain)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .help("メンバーが別のデスクトップに分かれています（このデスクトップにいる数 / 開いている数）。押すと、別のデスクトップのメンバーを外せます")
     }
 }

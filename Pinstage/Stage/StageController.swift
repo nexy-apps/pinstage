@@ -81,6 +81,16 @@ final class StageController {
     var singleWindowSize: SingleWindowSize {
         didSet { singleWindowSize.save(to: defaults) }
     }
+    /// グループを解消する前に確かめるか（メンバーが 1 つ以下になったとき。設定の「一般」と、確かめのダイアログのチェックで変わる）
+    var confirmsGroupDissolution: Bool {
+        didSet { GroupDissolutionSetting.save(confirmsGroupDissolution, to: defaults) }
+    }
+    /// グループごとの、メンバーのいるデスクトップから分かったこと（出すデスクトップが決まっているグループだけ）。
+    /// 読み直したとき・グループを書き換えたときに求め直し、ストリップの行は引くだけにする（行を描くたびに当てはめ直さないように）。
+    /// 書き換えるのは updateGroupDesktopStatuses（StageController+Groups.swift）だけ
+    var groupDesktopStatuses: [UUID: GroupDesktopStatus] = [:]
+    /// グループを出すデスクトップを、メンバーのいる所に合わせるとき、行き先が落ち着くまで待つ仕組み
+    @ObservationIgnored var desktopFollower = DesktopFollowStabilizer<UUID>()
 
     /// グループ・型を保存した（「ショートカット」アプリに、グループの一覧が変わったことを知らせるため）
     @ObservationIgnored var onLibraryChanged: (() -> Void)?
@@ -114,6 +124,7 @@ final class StageController {
         stripSettings = StripSettings(defaults: defaults)
         windowSwitcherSettings = WindowSwitcherSettings(defaults: defaults)
         singleWindowSize = SingleWindowSize(defaults: defaults)
+        confirmsGroupDissolution = GroupDissolutionSetting.confirms(in: defaults)
     }
 
     // MARK: - 起動と終了
@@ -192,6 +203,7 @@ final class StageController {
             windowFocusHistory.prune(keeping: existing)
         }
         classify(next)
+        followMemberDesktops()
         readBadgesIfNeeded()
         var pruned = board
         pruned.prune(keeping: existing)
@@ -259,6 +271,8 @@ final class StageController {
     /// デスクトップを切り替えた（StripManager から）
     func noteSpaceChanged() {
         spaceChangedAt = ProcessInfo.processInfo.systemUptime
+        // 切り替えた直後は、ほかのデスクトップのウインドウの一覧が揃っていないので、グループを出すデスクトップの行き先を数え直す
+        desktopFollower.reset()
         scheduleFocusSync()
     }
 
@@ -764,7 +778,7 @@ final class StageController {
         recallGroup(at: index)
     }
 
-    private func windowsWithSignature() -> [(item: WindowItem, signature: WindowSignature)] {
+    func windowsWithSignature() -> [(item: WindowItem, signature: WindowSignature)] {
         windows.compactMap { item in item.signature.map { (item, $0) } }
     }
 
@@ -863,6 +877,7 @@ final class StageController {
         if edited != library {
             library = edited
             saveLibrary()
+            updateGroupDesktopStatuses()
         }
         return result
     }

@@ -21,8 +21,9 @@ enum TextPrompt {
 
 /// してよいかを確かめるダイアログ
 enum Confirmation {
-    /// 「action」を押したら true
-    static func ask(title: String, message: String, action: String) -> Bool {
+    /// 「次回からこの確認を出さない」のようなチェック（suppression）を添えて確かめる
+    /// - Returns: confirmed は「action」を押したか、suppressed はチェックを付けたか
+    static func ask(title: String, message: String, action: String, suppression: String) -> (confirmed: Bool, suppressed: Bool) {
         // メニューバーだけに常駐しているので、前面に出してから聞く
         NSApp.activate()
         let alert = NSAlert()
@@ -30,6 +31,9 @@ enum Confirmation {
         alert.informativeText = message
         alert.addButton(withTitle: action)
         alert.addButton(withTitle: "キャンセル")
-        return alert.runModal() == .alertFirstButtonReturn
+        alert.showsSuppressionButton = true
+        alert.suppressionButton?.title = suppression
+        let confirmed = alert.runModal() == .alertFirstButtonReturn
+        return (confirmed, alert.suppressionButton?.state == .on)
     }
 }

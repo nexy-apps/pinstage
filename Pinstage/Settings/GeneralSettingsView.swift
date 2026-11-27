@@ -42,6 +42,18 @@ struct GeneralSettingsView: View {
                 )
             }
 
+            Section("グループ") {
+                Toggle(isOn: Binding(
+                    get: { stage.confirmsGroupDissolution },
+                    set: { stage.confirmsGroupDissolution = $0 }
+                )) {
+                    SettingTitle(
+                        "グループを解消する前に確かめる",
+                        info: "グループからウインドウを外して、ウインドウが 1 つ以下になると、グループを解消します（ウインドウは閉じません）。オンなら、その前に確かめます。確かめのダイアログで「次回からこの確認を出さない」を選んだあとでも、ここでオンに戻せます。"
+                    )
+                }
+            }
+
             Section("macOS の設定") {
                 SystemStatusRow(
                     title: "アクセシビリティ",
