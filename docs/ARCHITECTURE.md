@@ -201,6 +201,8 @@ Makefile            ビルド・起動・テスト・インストール・配布
 
 Developer ID に登録しない前提で、[Sparkle](https://sparkle-project.org) 2 を使う（Pinshelf と同じ仕組み）。決まりの全体（アプリの ID・証明書・金庫・アドホック署名の扱い）は、共通のノート「Pinシリーズの決まり」。ここには Pinstage での形だけを書く。更新の検討の経緯は、Pinshelf のノート「更新の仕組みの方針」。
 
+### 署名
+
 - macOS は、アプリが同じものかを「アプリの ID ＋ 署名の証明書」で見分け、アクセシビリティ・画面収録の許可を、その組（指定要件。`identifier "app.nexy.Pinstage" and certificate leaf = H"…"`）で覚える。アドホック署名だと、ビルドし直すたび・版を上げるたびに別のアプリと見なされ、許可を取り直すことになるので、決まった自己署名の証明書で署名する。Apple の確認ではないので、初めて開くときの「このまま開く」は残る
 - ID・証明書・URL スキームは、使い道で分ける（Pinshelf と同じ形）
 
@@ -218,6 +220,8 @@ Developer ID に登録しない前提で、[Sparkle](https://sparkle-project.org
 - 証明書は名前ではなく指紋（SHA-1）で確かめる。`make dist` は、署名の前に金庫の証明書の指紋が `project.yml` の Release の `CODE_SIGN_IDENTITY`（Xcode もこの指紋で証明書を選ぶ）と合うか、署名のあとにアプリがその証明書で署名されたかを確かめる（`scripts/signing-check.sh`）
 - 証明書を替えると、入れてもらったアプリが別のアプリ扱いになり、許可を取り直すことになる。配る版用の証明書の控え（.p12）は、作者が Mac の外に保管している
 - 0.1.0 より前の β 版（ID `app.pinstage.Pinstage`、証明書 `Pinstage Dev` やアドホック署名）とは、ID が違うので別のアプリ。0.1.0 から出し直した（決まりの 15 の節）
+### 更新
+
 - **取り込み方**：公式の配布物（`Sparkle.framework` と道具）を `make` が取り寄せ、決めてある SHA-256 と合うことを確かめて `Vendor/Sparkle` に置く。Sparkle の版を上げるときは、`Makefile` の `SPARKLE_VERSION` と `SPARKLE_SHA256` を一緒に変える（Pinshelf とそろえる）
 - **本物かの確かめ**：更新ファイル（zip）は、作者の EdDSA の鍵で署名する。アプリには公開鍵（`SUPublicEDKey`）を入れ、Sparkle が署名を確かめてから入れ替える。公開鍵は `project.yml` の `PINSTAGE_UPDATE_PUBLIC_KEY`。秘密鍵は作者の金庫の中にあり、`generate_appcast` が版の一覧を作るときに zip に署名する（このとき Mac が金庫のパスワードをもう一度聞く。`generate_appcast` は、鍵を確認なしに使ってよい道具に入っていないため）。公開鍵の入っていないビルドでは、更新の機能を出さない（`SparkleUpdater.start` が nil を返す）。開発のビルド（Debug・Install）は公開鍵を空にして、配る版を新しい版と見て入れ替えようとしないようにしている
 - **「このまま開く」が要らない理由**：Sparkle が自分でダウンロードして確かめた版からは、ダウンロードのしるし（quarantine）を外す。だから、更新で入れた版は Gatekeeper に止められない
@@ -226,7 +230,7 @@ Developer ID に登録しない前提で、[Sparkle](https://sparkle-project.org
 - **知らせ方**：メニューバーに常駐するアプリなので、自動で見つけた新しい版は画面に割り込ませず、アイコンの印とメニューで知らせる（Sparkle の「控えめな知らせ」の作法）。メニューから選ぶと、Sparkle の更新の画面が前面に出る。更新の画面は開け閉めを自分では知れないので、確かめ始めてから確かめ終えるまで、名前付きの印で Dock に出しておく（`DockIcon.hold`・`release`）
 - **確かめる間隔**：1 時間に 1 回（`SUScheduledCheckInterval` 3600。Sparkle が受け付けるいちばん短い間隔で、VS Code と同じ）。起動したときは、前に確かめてから 1 時間以上たっていれば、すぐ確かめる。版の一覧は小さな XML 1 つなので、1 時間ごとでも GitHub への負担は小さい
 - **印の形**：1 色の印の右下を丸く切り抜き、下向きの矢印を抜いた丸を置いたアイコンに替える（`AppIcon.symbolWithUpdateBadge`。Pinshelf と同じ形・大きさ）。テンプレート画像のままにして、色は付けない（メニューバーのアプリの印は 1 色が一般的で、色付きの点はマイク・カメラの使用中の印と紛れやすい）。切り抜くのは右のウインドウの下半分で、左のストリップ・左のウインドウ・ピンは残る
-- **印を消すとき**：印は「まだ入れていない新しい版がある」の意味で、入れるか飛ばすまで出しておく（Pin シリーズ共通の仕様。ノート「更新の仕組みの方針」の 8 の節）。Sparkle の説明書は「画面を見てもらったら印を消す」作り（`standardUserDriverDidReceiveUserAttention`）を勧めるが、それだと更新の画面を開いて「あとで通知」で閉じただけで消え、次に自動で確かめるまで戻らないので使わない。見つけた版とビルド番号を `UserDefaults` に保存し（`AppUpdates`）、起動したときに今の版より新しければ印を戻す（終了しても消えないように）。消すのは、利用者が「このバージョンはスキップ」を選んだとき（`updater(_:userDidMake:forUpdate:state:)` の `.skip`）・確かめ直して新しい版がなかったとき（`updaterDidNotFindUpdate`。通信の失敗では呼ばれない）・入れて今の版が同じか新しくなったとき
+- **印を消すとき**：印は「まだ入れていない新しい版がある」の意味で、入れるか飛ばすまで出しておく（Pin シリーズ共通の仕様。共通のノート「Pinシリーズの決まり」の 7 の節）。Sparkle の説明書は「画面を見てもらったら印を消す」作り（`standardUserDriverDidReceiveUserAttention`）を勧めるが、それだと更新の画面を開いて「あとで通知」で閉じただけで消え、次に自動で確かめるまで戻らないので使わない。見つけた版とビルド番号を `UserDefaults` に保存し（`AppUpdates`）、起動したときに今の版より新しければ印を戻す（終了しても消えないように）。消すのは、利用者が「このバージョンはスキップ」を選んだとき（`updater(_:userDidMake:forUpdate:state:)` の `.skip`）・確かめ直して新しい版がなかったとき（`updaterDidNotFindUpdate`。通信の失敗では呼ばれない）・入れて今の版が同じか新しくなったとき
 - **確認中の小窓の長さ**：「アップデートを確認中…」の小窓が一瞬で閉じてちらついて見えないよう、Sparkle の標準の画面を `PacedUserDriver` で包み、小窓を少なくとも 0.5 秒は出してから結果の画面に渡す（Pinshelf と同じ）
 - **版の一覧**：`appcast.xml` は、組織 nexy-apps の GitHub Pages のリポジトリ（[nexy-apps.github.io](https://github.com/nexy-apps/nexy-apps.github.io)）の `pinstage/appcast.xml` に置き、アプリは `https://nexy-apps.github.io/pinstage/appcast.xml` から読む（`SUFeedURL`。配ったあとは変えない）。アプリのリポジトリには置かない。載せるのは、いちばん新しい版だけ。この版の変更（`scripts/release-changes.md`）を、Markdown のまま埋め込む
 - **版の比べ方**：Sparkle は `CFBundleVersion`（ビルド番号）で新旧を比べる。出すたびに必ず上げる

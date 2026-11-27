@@ -26,8 +26,8 @@
 # 変数のすぐ後ろに全角の文字を続けるときは、${NAME} と波かっこで囲む（create-signing-cert.sh と同じ理由）。
 set -euo pipefail
 
-PORT="${UPDATE_TEST_PORT:?make update-test から流してください（手元のサーバーのポートを渡します）}"
-SIGN_IDENTITY="${SIGN_IDENTITY:?SIGN_IDENTITY がありません（make update-test から流してください）}"
+PORT="${UPDATE_TEST_PORT:?make update-test から流してください（UPDATE_TEST_PORT がありません）}"
+SIGN_IDENTITY="${SIGN_IDENTITY:?make update-test から流してください（SIGN_IDENTITY がありません）}"
 if [ "${SIGN_IDENTITY}" = "-" ]; then
   SIGN_LABEL="アドホック署名"
   PERMISSION_NOTE="アドホック署名なので、入れ替えると許可が外れるのが正しい動き（証明書で署名したときとの比べ用）"
@@ -130,7 +130,7 @@ build_app() {
   local plist="$1"
   shift
   if ! xcodebuild -project Pinstage.xcodeproj -scheme Pinstage -sdk macosx -configuration Release \
-    -derivedDataPath "${WORK}/DerivedData" CODE_SIGN_IDENTITY="${SIGN_IDENTITY}" \
+    -derivedDataPath "${WORK}/DerivedData" CODE_SIGN_IDENTITY="${SIGN_IDENTITY}" ARCHS="$(uname -m)" \
     PRODUCT_BUNDLE_IDENTIFIER="${TEST_ID}" PINSTAGE_DISPLAY_NAME="${TEST_DISPLAY_NAME}" PINSTAGE_URL_SCHEME="${TEST_URL_SCHEME}" \
     PINSTAGE_UPDATE_PUBLIC_KEY="${PUBLIC_KEY}" INFOPLIST_FILE="${plist}" "$@" build >"${WORK}/build.log" 2>&1; then
     tail -30 "${WORK}/build.log"
@@ -159,6 +159,10 @@ ditto "${PRODUCT}" "${NEW_APP}"
 NEW_ZIP="${SITE}/${TEST_NAME}-${NEW_VERSION}.zip"
 zip_app "${NEW_APP}" "${NEW_ZIP}"
 
+# 2 つの版の「同じアプリ」の条件（macOS が許可などを覚えるときの目印）。証明書で署名していれば、2 つとも同じになる
+OLD_REQUIREMENT="$(codesign -d -r- "${OLD_APP}" 2>&1 | sed -n 's/^designated => //p')"
+NEW_REQUIREMENT="$(codesign -d -r- "${NEW_APP}" 2>&1 | sed -n 's/^designated => //p')"
+
 # 版の一覧を作る（試験用の鍵で署名する）
 cat > "${WORK}/notes.md" <<EOF
 ## 更新の試験
@@ -174,6 +178,11 @@ cat <<EOF
 
   古い版（${VERSION}）: ${OLD_APP}
   新しい版（${NEW_VERSION}）: 手元のサーバーから配ります
+
+  macOS が「同じアプリ」と見なす条件（許可などはこれにひも付く）:
+    古い版: ${OLD_REQUIREMENT}
+    新しい版: ${NEW_REQUIREMENT}
+  （${PERMISSION_NOTE}）
 
 どちらの試し方でも、先に、ふだんの Pinstage と Pinstage Dev を終了しておきます（Pinstage Dev は make stop で止まる。配る版の Pinstage は止まらない）。
 試験用アプリの名前は ${TEST_DISPLAY_NAME} です（アプリのファイルは ${TEST_NAME}.app。メニューバーのアイコンとウインドウバーは、ふだんの Pinstage と同じ）。

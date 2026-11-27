@@ -17,7 +17,7 @@ DIST_BASE := dist/Pinstage-$(RELEASE_NAME)
 DIST_ZIP := $(DIST_BASE).zip
 DIST_DMG := $(DIST_BASE).dmg
 
-# 署名（決まりは、共通のノート「Pinシリーズの決まり」の 4・5 の節と docs/ARCHITECTURE.md の「署名と更新」。Pinshelf と同じ作り）。
+# 署名（決まりは、共通のノート「Pinシリーズの決まり」の 4・5 の節と docs/ARCHITECTURE.md の「署名」。Pinshelf と同じ作り）。
 # 開発のビルド・更新の試験・補助の道具は、開発用の証明書で署名する（make cert で一度だけ作る）。
 # 証明書がなければ止めて案内を出す（黙ってアドホック署名にしない）。ADHOC=1 を付けたときだけ、注意を出してアドホック署名にする。
 # 作者以外がソースからビルドするときは、DEV_CERT="〇〇 Dev Signing" のように自分の証明書の名前を渡せる
