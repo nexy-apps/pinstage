@@ -5,7 +5,9 @@
 # この版の変更（Markdown）を埋め込んで、appcast.xml を書き出す。載せるのは、いちばん新しい版だけ（Sparkle が見るのは、それで足りる）。
 #
 # 使い方: make-appcast.sh <更新ファイル.zip> <この版の変更.md> <ダウンロード元の URL の頭> <書き出す appcast.xml>
-#   環境変数 SPARKLE_KEY_FILE: 秘密鍵のファイル（試験用）。なければ、ログインキーチェーンの鍵を使う
+#   環境変数 SPARKLE_KEY_FILE: 秘密鍵のファイル（make update-test の試験用の鍵）
+#   環境変数 SPARKLE_ACCOUNT: キーチェーンの中の鍵のアカウント名（make publish は、金庫の中の nexy-release）
+#   どちらもなければ、Sparkle の道具の既定のアカウントの鍵を使う
 set -euo pipefail
 
 ZIP="$1"
@@ -25,11 +27,13 @@ grep -v '^<!--.*-->$' "${NOTES}" > "${STAGE}/${NAME}.md"
 KEY_ARGS=()
 if [ -n "${SPARKLE_KEY_FILE:-}" ]; then
   KEY_ARGS=(--ed-key-file "${SPARKLE_KEY_FILE}")
+elif [ -n "${SPARKLE_ACCOUNT:-}" ]; then
+  KEY_ARGS=(--account "${SPARKLE_ACCOUNT}")
 fi
 
 # macOS の bash（3.2）は、空の配列をそのまま展開すると止まるので、あるときだけ展開する
 "${BIN}/generate_appcast" ${KEY_ARGS[@]+"${KEY_ARGS[@]}"} \
-  --download-url-prefix "${URL_PREFIX}" --embed-release-notes --link "https://github.com/yzanbo/pinstage" \
+  --download-url-prefix "${URL_PREFIX}" --embed-release-notes --link "https://github.com/nexy-apps/pinstage" \
   -o "${STAGE}/appcast.xml" "${STAGE}"
 
 # 署名とダウンロード元が入ったことを確かめてから、書き出す

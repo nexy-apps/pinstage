@@ -318,13 +318,13 @@ struct StripTests {
 @Suite("自動化の URL")
 struct PinstageURLTests {
     func parse(_ text: String) -> PinstageCommand? {
-        URL(string: text).flatMap(PinstageURL.parse)
+        URL(string: text).flatMap { PinstageURL.parse($0, scheme: PinstageURL.scheme) }
     }
 
     @Test("グループを名前で呼び出す（日本語の名前も）")
     func group() throws {
-        let url = try #require(PinstageURL.groupURL(name: "資料 作り"))
-        #expect(PinstageURL.parse(url) == .recallGroup("資料 作り"))
+        let url = try #require(PinstageURL.groupURL(name: "資料 作り", scheme: PinstageURL.scheme))
+        #expect(PinstageURL.parse(url, scheme: PinstageURL.scheme) == .recallGroup("資料 作り"))
         #expect(parse("pinstage://group/dev") == .recallGroup("dev"))
         #expect(parse("pinstage://group/next") == .nextGroup)
         #expect(parse("pinstage://group/previous") == .previousGroup)
@@ -340,6 +340,15 @@ struct PinstageURLTests {
         #expect(parse("pinstage://search") == .search)
         #expect(parse("pinstage://save?name=%E9%96%8B%E7%99%BA") == .saveStageAsGroup(name: "開発"))
         #expect(parse("pinstage://save") == .saveStageAsGroup(name: nil))
+    }
+
+    @Test("開発のビルドなど、動いているアプリの URL スキームで読み書きする（ほかのビルドのスキームは受け取らない）")
+    func otherBuildSchemes() throws {
+        let url = try #require(PinstageURL.groupURL(name: "開発", scheme: "pinstage-dev"))
+        #expect(url.scheme == "pinstage-dev")
+        #expect(PinstageURL.parse(url, scheme: "pinstage-dev") == .recallGroup("開発"))
+        #expect(PinstageURL.parse(try #require(URL(string: "pinstage-dev://strip/show")), scheme: "pinstage-dev") == .strip(.show))
+        #expect(parse("pinstage-dev://group/dev") == nil)
     }
 
     @Test("ほかの URL は受け取らない")

@@ -1,9 +1,10 @@
 #!/bin/bash
 # 更新を、手元で通しで試す準備をする（make update-test。手順は docs/TESTING.md の「更新を通しで試す」。Pinshelf と同じ作り）。
 #
-# ふだんの Pinstage とは別の ID・別の名前（PinstageUpdateTest）の試験用アプリを、古い版と新しい版の 2 つ作り、
+# ふだんの Pinstage とは別の ID（app.nexy.Pinstage.updatetest）・別の名前（Pinstage UpdateTest）の試験用アプリを、古い版と新しい版の 2 つ作り、
 # 新しい版を手元のサーバー（http://localhost:8767）から配る。古い版を開くと、Sparkle が新しい版を見つけて入れ替える。
 # いちばん確かめたいのは、入れ替えたあとも、アクセシビリティ（と画面収録）の許可が外れないこと。
+# URL スキームも、配る版・開発のビルドとぶつからないよう pinstage-updatetest:// にする。
 #
 # 古い版の開き方は 2 通り:
 # - 手早く: 手元でビルドしたもの（build/update-test/old）を、そのまま開く
@@ -16,30 +17,29 @@
 # - 試験用アプリだけ、手元のサーバー（暗号化なし）から読めるように、通信の例外を足す（配る版には入れない）
 #
 # 使い方: update-test.sh [xcodebuild に足す引数…]
-#   環境変数 SIGN_IDENTITY: アプリの署名に使う証明書の名前（make update-test が、配る版と同じ証明書の名前を渡す。
-#     その証明書がこの Mac にあるかも、make の側で確かめる）。
-#     - を渡すとアドホック署名にし、ID と名前の後ろに AdHoc を付ける（macOS は、許可をアプリの ID と署名の組で覚えるので、
-#     署名のやり方ごとに試験用アプリを分ける。アドホック署名では、入れ替えると許可が外れるのが正しい動き）
+#   環境変数 SIGN_IDENTITY: アプリの署名に使う証明書（make update-test が、開発用の証明書 nexy Dev Signing を渡す。
+#     make update-test ADHOC=1 のときは "-" でアドホック署名。このときは、入れ替えると許可が外れるのが正しい動き）
 #   環境変数 UPDATE_TEST_PORT: 手元のサーバーのポート（make update-test が渡す。既定は 8767。Pin シリーズの試験どうしでぶつからないよう、
 #     アプリごとに分けている: Pinshelf 8765・Pinshot 8766・Pinstage 8767）
 #   環境変数 NO_SERVER=1: アプリと版の一覧を作るだけで、サーバーは動かさない
 #
-# 変数のすぐ後ろに全角の文字を続けるときは、${NAME} と波かっこで囲む（create-dev-cert.sh と同じ理由）。
+# 変数のすぐ後ろに全角の文字を続けるときは、${NAME} と波かっこで囲む（create-signing-cert.sh と同じ理由）。
 set -euo pipefail
 
 PORT="${UPDATE_TEST_PORT:?make update-test から流してください（手元のサーバーのポートを渡します）}"
-SIGN_IDENTITY="${SIGN_IDENTITY:?make update-test から流してください（署名に使う証明書の名前を渡します）}"
+SIGN_IDENTITY="${SIGN_IDENTITY:?SIGN_IDENTITY がありません（make update-test から流してください）}"
 if [ "${SIGN_IDENTITY}" = "-" ]; then
-  SUFFIX="AdHoc"
   SIGN_LABEL="アドホック署名"
   PERMISSION_NOTE="アドホック署名なので、入れ替えると許可が外れるのが正しい動き（証明書で署名したときとの比べ用）"
 else
-  SUFFIX=""
   SIGN_LABEL="証明書「${SIGN_IDENTITY}」で署名"
-  PERMISSION_NOTE="配る版と同じ証明書で署名しているので、許可が外れないのが正しい動き"
+  PERMISSION_NOTE="古い版と新しい版を同じ証明書で署名しているので、許可が外れないのが正しい動き"
 fi
-TEST_ID="app.pinstage.UpdateTest${SUFFIX}"
-TEST_NAME="PinstageUpdateTest${SUFFIX}"
+# 試験用アプリの ID・アプリのファイル名・画面に出る名前・URL スキーム（決まりは、共通のノート「Pinシリーズの決まり」の 3 の節）
+TEST_ID="app.nexy.Pinstage.updatetest"
+TEST_NAME="PinstageUpdateTest"
+TEST_DISPLAY_NAME="Pinstage UpdateTest"
+TEST_URL_SCHEME="pinstage-updatetest"
 ROOT="$(pwd)"
 WORK="${ROOT}/build/update-test"
 SITE="${WORK}/site"
@@ -49,13 +49,10 @@ PRODUCT="${WORK}/DerivedData/Build/Products/Release/Pinstage.app"
 PLIST_BUDDY=/usr/libexec/PlistBuddy
 
 # 試験用アプリが動いたままだと、作り直した古い版を開いても、動いているほうが前に出るだけになる
-# （署名のやり方が違うほうの試験用アプリも、作り直しで消すので、動いていないことを確かめる）
-for id in app.pinstage.UpdateTest app.pinstage.UpdateTestAdHoc; do
-  if lsappinfo find bundleid="${id}" 2>/dev/null | grep -q .; then
-    echo "試験用の Pinstage（${id}）が動いています。終了してから、もう一度流してください。" >&2
-    exit 1
-  fi
-done
+if lsappinfo find bundleid="${TEST_ID}" 2>/dev/null | grep -q .; then
+  echo "試験用の Pinstage（${TEST_DISPLAY_NAME}）が動いています。終了してから、もう一度流してください。" >&2
+  exit 1
+fi
 
 # サーバーを動かせるか（ポートが空いているか）を、ビルドの前に確かめる（ビルドには数分かかるので、作り終えてから止まらないように。Pinshot と同じ）。
 # サーバーと同じく 127.0.0.1 のそのポートで受け口を開いてみて、開けなければ止める
@@ -103,22 +100,23 @@ mkdir -p "${WORK}/old" "${WORK}/new" "${SITE}/download" "${WORK}/plists"
 # 試験用の鍵を作る（1 行目が秘密鍵、2 行目が公開鍵）
 echo "試験用の鍵を作っています…"
 xcrun swiftc -O -module-cache-path "${WORK}/module-cache" scripts/update-test-key.swift -o "${WORK}/make-key"
+# 補助の道具も、アプリと同じ証明書で署名する（アドホック署名にするのは ADHOC=1 のときだけ。決まりの 5 の節）
+codesign -f -s "${SIGN_IDENTITY}" "${WORK}/make-key" 2>/dev/null
 KEYS="$("${WORK}/make-key")"
 KEY_FILE="${WORK}/test-private-key.txt"
 echo "${KEYS}" | sed -n 1p > "${KEY_FILE}"
 PUBLIC_KEY="$(echo "${KEYS}" | sed -n 2p)"
 
-# 試験用の Info.plist を作る（名前・版・配信元・公開鍵を差し替え、手元のサーバーから読めるようにする）。
+# 試験用の Info.plist を作る（版・配信元を差し替え、手元のサーバーから読めるようにする。ID・画面の名前・URL スキーム・公開鍵は、
+# 開発のビルドと同じく、ビルドの設定（project.yml の PINSTAGE_*）で渡す: build_app）。
 # 自動で確かめる間隔は、配る版と同じ 1 時間（Info.plist のまま。Sparkle が受け付けるいちばん短い間隔）
 make_plist() {
   local output="$1" build="$2" version="$3"
   cp Pinstage/Info.plist "${output}"
   "${PLIST_BUDDY}" \
-    -c "Set :CFBundleDisplayName ${TEST_NAME}" \
     -c "Set :CFBundleVersion ${build}" \
     -c "Set :CFBundleShortVersionString ${version}" \
     -c "Set :SUFeedURL http://localhost:${PORT}/appcast.xml" \
-    -c "Set :SUPublicEDKey ${PUBLIC_KEY}" \
     -c "Add :NSAppTransportSecurity dict" \
     -c "Add :NSAppTransportSecurity:NSAllowsLocalNetworking bool true" \
     -c "Add :NSAppTransportSecurity:NSExceptionDomains dict" \
@@ -133,7 +131,8 @@ build_app() {
   shift
   if ! xcodebuild -project Pinstage.xcodeproj -scheme Pinstage -sdk macosx -configuration Release \
     -derivedDataPath "${WORK}/DerivedData" CODE_SIGN_IDENTITY="${SIGN_IDENTITY}" \
-    PRODUCT_BUNDLE_IDENTIFIER="${TEST_ID}" INFOPLIST_FILE="${plist}" "$@" build >"${WORK}/build.log" 2>&1; then
+    PRODUCT_BUNDLE_IDENTIFIER="${TEST_ID}" PINSTAGE_DISPLAY_NAME="${TEST_DISPLAY_NAME}" PINSTAGE_URL_SCHEME="${TEST_URL_SCHEME}" \
+    PINSTAGE_UPDATE_PUBLIC_KEY="${PUBLIC_KEY}" INFOPLIST_FILE="${plist}" "$@" build >"${WORK}/build.log" 2>&1; then
     tail -30 "${WORK}/build.log"
     echo "ビルドできませんでした（記録: ${WORK}/build.log）" >&2
     exit 1
@@ -176,13 +175,13 @@ cat <<EOF
   古い版（${VERSION}）: ${OLD_APP}
   新しい版（${NEW_VERSION}）: 手元のサーバーから配ります
 
-どちらの試し方でも、先に、ふだんの Pinstage を終了しておきます（make stop）。
-試験用アプリの名前は ${TEST_NAME} です（メニューバーのアイコンとウインドウバーは、ふだんの Pinstage と同じ）。
+どちらの試し方でも、先に、ふだんの Pinstage と Pinstage Dev を終了しておきます（Pinstage Dev は make stop で止まる。配る版の Pinstage は止まらない）。
+試験用アプリの名前は ${TEST_DISPLAY_NAME} です（アプリのファイルは ${TEST_NAME}.app。メニューバーのアイコンとウインドウバーは、ふだんの Pinstage と同じ）。
 グループと型は、ふだんの Pinstage と同じファイルを使うので、試験のあいだは書き換えないでおきます（設定と許可は別）。
 
 ■ 手早く試す（手元でビルドした古い版から更新する）
   1. 別のターミナルで、古い版を開く:  open "${OLD_APP}"
-  2. アクセシビリティの許可を求められたら、システム設定で ${TEST_NAME} をオンにする。
+  2. アクセシビリティの許可を求められたら、システム設定で ${TEST_DISPLAY_NAME} をオンにする。
      設定の「一般」→「macOS の設定」で、アクセシビリティが「許可しています」になったのを確かめ、
      「起動」の「ログイン時に起動」をオンにする
   3. メニューバーのアイコンの右下に下向きの矢印の印が付き、メニューのいちばん上に「新しいバージョン ${NEW_VERSION} があります…」と出る。
@@ -204,8 +203,8 @@ ${FOLDER_NOTE}  5. 入れ替わって開き直したら、次を確かめる:
        http://localhost:${PORT}/download/${OLD_ZIP_NAME}
   2. 「ダウンロード」フォルダにできた ${TEST_NAME}.app を、Finder で「アプリケーション」フォルダへ移す
      （zip のままのときは、ダブルクリックで展開してから）
-  3. 移した ${TEST_NAME} を開く。「開発元を確認できない」と止められるので、
-     システム設定 →「プライバシーとセキュリティ」の下の方の「このまま開く」で開く
+  3. 移した ${TEST_NAME} を開く。「"${TEST_NAME}.app"は開いていません」と止められるので、「完了」を押し（「ゴミ箱に入れる」は押さない）、
+     システム設定 →「プライバシーとセキュリティ」の下の方の「このまま開く」を押してから、もう一度開く
      （ここでは、ターミナルの xattr -d では開かない。ダウンロードの印を付けたまま試すため）
      止められずにそのまま開いたときは、そのまま進めてよい（この Mac で一度開いたことのある版は、止められないことがある。
      あとから xattr で印を付けると、別の場所に写して動かす扱い（App Translocation）になり、更新できなくなるので、付けない）

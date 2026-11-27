@@ -5,7 +5,7 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>ja</string>
 	<key>CFBundleDisplayName</key>
-	<string>Pinstage</string>
+	<string>$(PINSTAGE_DISPLAY_NAME)</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
@@ -21,20 +21,20 @@
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
-	<string>0.3.0</string>
+	<string>0.1.0</string>
 	<key>CFBundleURLTypes</key>
 	<array>
 		<dict>
 			<key>CFBundleURLName</key>
-			<string>app.pinstage.Pinstage</string>
+			<string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
 			<key>CFBundleURLSchemes</key>
 			<array>
-				<string>pinstage</string>
+				<string>$(PINSTAGE_URL_SCHEME)</string>
 			</array>
 		</dict>
 	</array>
 	<key>CFBundleVersion</key>
-	<string>5</string>
+	<string>1</string>
 	<key>LSApplicationCategoryType</key>
 	<string>public.app-category.productivity</string>
 	<key>LSUIElement</key>
@@ -44,9 +44,9 @@
 	<key>SUEnableAutomaticChecks</key>
 	<true/>
 	<key>SUFeedURL</key>
-	<string>https://raw.githubusercontent.com/yzanbo/pinstage/main/appcast.xml</string>
+	<string>https://nexy-apps.github.io/pinstage/appcast.xml</string>
 	<key>SUPublicEDKey</key>
-	<string>fIyKq+2V6b4ohDcJu6T86VEbZV01mUdv7mWw5IE7cpY=</string>
+	<string>$(PINSTAGE_UPDATE_PUBLIC_KEY)</string>
 	<key>SUScheduledCheckInterval</key>
 	<integer>3600</integer>
 </dict>

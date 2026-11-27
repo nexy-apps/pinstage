@@ -26,11 +26,17 @@ public enum PinstageCommand: Equatable, Sendable {
 /// - pinstage://strip/show ・ hide ・ toggle … ストリップを出す・隠す・切り替える
 /// - pinstage://search … 検索の欄を出す
 /// - pinstage://save?name=資料作り … ステージをグループとして保存する
+///
+/// 開発のビルドは pinstage-dev://、更新の試験用アプリは pinstage-updatetest:// を名乗る（配る版と両方が pinstage:// を名乗ると、
+/// どちらが開くか決まらないため。決まりは共通のノート「Pinシリーズの決まり」）。どのスキームを名乗るかはビルドの設定
+/// （project.yml の PINSTAGE_URL_SCHEME）が決めるので、ここでは、呼ぶ側が渡したスキーム（動いているアプリのもの）で読み書きする
 public enum PinstageURL {
+    /// 配る版の URL スキーム（アプリの Info.plist から読めないときの控え）
     public static let scheme = "pinstage"
 
-    public static func parse(_ url: URL) -> PinstageCommand? {
-        guard url.scheme?.lowercased() == scheme else { return nil }
+    /// scheme には、動いているアプリの URL スキームを渡す
+    public static func parse(_ url: URL, scheme: String) -> PinstageCommand? {
+        guard url.scheme?.lowercased() == scheme.lowercased() else { return nil }
         let components = URLComponents(url: url, resolvingAgainstBaseURL: false)
         // pinstage://group/開発 では host が "group"、path が "/開発"
         let action = (url.host(percentEncoded: false) ?? "").lowercased()
@@ -55,8 +61,8 @@ public enum PinstageURL {
         }
     }
 
-    /// グループを呼び出す URL（名前を URL に使える形にする）
-    public static func groupURL(name: String) -> URL? {
+    /// グループを呼び出す URL（名前を URL に使える形にする）。scheme には、動いているアプリの URL スキームを渡す
+    public static func groupURL(name: String, scheme: String) -> URL? {
         var components = URLComponents()
         components.scheme = scheme
         components.host = "group"

@@ -50,7 +50,7 @@ final class AutomationCenter {
 
     /// URL で頼まれた操作を行う（読めない URL・できなかった操作は、何もしない）
     func open(_ url: URL) {
-        guard let command = PinstageURL.parse(url) else { return }
+        guard let command = PinstageURL.parse(url, scheme: Bundle.main.urlScheme) else { return }
         Task { try? await perform(command) }
     }
 
