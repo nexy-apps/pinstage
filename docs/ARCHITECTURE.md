@@ -11,7 +11,7 @@
 ```
 Pinstage/
 ├── App/            起動と、アプリ全体に関わるもの
-│   ├── AppDelegate           起動・各部品のつなぎ・ショートカットの操作・終了の合図（killall）を受けて終わる
+│   ├── AppDelegate           起動・各部品のつなぎ・ショートカットの操作・終了の合図（make stop の kill。SIGTERM）を受けて終わる
 │   ├── StatusItemController  メニューバーのアイコンとメニュー（ウインドウバーの出し入れ・出し方・新しい型・設定・アップデートを確認・終了）。新しい版があるときの印も出す
 │   ├── ShortcutCenter        ショートカットの割り当て（保存・ほかの操作とぶつかったときに外す）と登録。押したキーからショートカットを作る
 │   ├── HotKey                どこからでも使えるショートカット（Carbon の RegisterEventHotKey。Pinshot・Pinshelf と同じ）

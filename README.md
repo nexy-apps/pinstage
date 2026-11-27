@@ -145,7 +145,7 @@ macOS は、アプリが同じものかを「アプリの ID ＋ 署名の証明
 | `make publish` | DMG と zip を作り、GitHub に Release（タグ `v<版>`）を作ってアップロードする（作者だけ）。β 版は `make publish BETA=1`（タグ `v<版>-beta.1`・プレリリース）。zip に金庫の中の鍵で署名し、版の一覧（`appcast.xml`）を作って、版の一覧の置き場所（[nexy-apps.github.io](https://github.com/nexy-apps/nexy-apps.github.io)）に送る（コミット済みで、GitHub の main と同じ状態からだけ動く） |
 | `make update-test` | 更新を、手元で通しで試す（別の ID の試験用アプリ Pinstage UpdateTest を、開発用の証明書で 2 つの版に作り、手元のサーバーから配る。[docs/TESTING.md](docs/TESTING.md)） |
 | `make update-test-log` | 更新の試験のあいだの macOS の記録を、`build/update-test/system.log` に書き出す（許可が引き継がれたかの裏取り・うまくいかないときの手がかり） |
-| `make stop` | 動いている Pinstage Dev を終了する（配る版の Pinstage は止めない） |
+| `make stop` | 動いている Pinstage Dev を終了する（何を止めたかを出す。8 秒たっても終わらなければ強制終了する。配る版の Pinstage は止めない） |
 | `make preview` | ウインドウバー・編集画面・検索・設定の見た目を、見本のデータで画像に描き出す（`build/preview`。本物の設定は読まない・書き換えない） |
 | `make readme-images` | README の見本の画像（`docs/images/`）を作り直す（ウインドウバー・ウインドウスイッチャーの見た目を変えたとき。見本のデータで描くので、画面には何も出ない） |
 | `make icon` | アイコンを描き直す（`scripts/make-app-icon.swift` を変えたとき） |

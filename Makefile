@@ -47,7 +47,10 @@ RELEASE_SIGN_IDENTITY = $(or $(shell sed -n 's/^ *CODE_SIGN_IDENTITY: *\([0-9A-F
 	$(error project.yml の Release に、CODE_SIGN_IDENTITY（証明書の SHA-1）がありません))
 # 金庫の中の、更新ファイルに署名する鍵のアカウント名（Sparkle の道具に渡す）
 SPARKLE_ACCOUNT := nexy-release
-# Launch Services（アプリの場所とアイコンを覚えている macOS の仕組み）に、アプリを登録し直す道具
+# Launch Services（アプリの場所とアイコンを覚えている macOS の仕組み）に、アプリを登録し直す道具。
+# make run・make install はアプリを DEV_APP にファイルごとに写すので、写している途中（署名のファイルがまだない）のアプリを macOS が先に見つけて、
+# 「開けないアプリ」（アイコンに 🚫 の印）と覚えることがある。写し終えてから登録し直して、正しい状態に替える。
+# アイコンを変えたあとも、Finder・Dock が前のアイコン（アイコンを入れる前の仮のもの）を出し続けないようにする役目もある
 LSREGISTER := /System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister
 # $(call register_app,アプリの場所): アプリを Launch Services に登録し直す（失敗しても止めない）
 register_app = touch "$(1)"; $(LSREGISTER) -f "$(1)" >/dev/null 2>&1 || true
@@ -215,6 +218,7 @@ update-test-log:
 # （make install と同じ場所なので、中身は最後に流した make run か make install のもの）。
 # 終了した直後は、Launch Services がまだ「動いている」と思っていて、open が
 # 「_LSOpenURLsWithCompletionHandler() failed with error -600」で失敗することがあるので、少し待ってやり直す
+# （何度やっても起動できないときだけ、最後の open のエラーをそのまま出す）
 run: build stop
 	@$(call place_dev_app,$(APP))
 	@opened=""; for i in 1 2 3 4 5; do open "$(DEV_APP)" 2>/dev/null && { opened=1; break; }; sleep 0.5; done; \
