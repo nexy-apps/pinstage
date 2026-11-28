@@ -245,7 +245,7 @@ Developer ID に登録しない前提で、[Sparkle](https://sparkle-project.org
   Launch Services には `Pinstage Dev.app` だけを登録し、ビルドのフォルダの `Pinstage.app` は登録を外す（`place_dev_app`）。
   `make build`・`make preview`・`make readme-images` は、ビルドのフォルダのまま使う（起動しない・画面に出さないため）
 - 開発のビルド・アイコンを描く道具・更新の試験の鍵の道具も、開発用の証明書で署名する。証明書がなければ止まって `make cert` を案内し、`ADHOC=1` を付けたときだけアドホック署名にする（`1` だけを受け付ける。配る版には効かない）。`make build`・`make install` は、ビルドのあとに想定の署名になったかを確かめる（開発用の証明書は人ごとに違うので、名前で見る）
-- **配る版の署名**：配る版用の証明書と、更新ファイルの署名の鍵（Sparkle・アカウント名 `nexy-release`）は、作者の Mac の鍵付きのキーチェーン（金庫。`~/Library/Keychains/nexy-release.keychain-db`）に入っている（Pin シリーズで共通。Pinshelf の `scripts/create-nexy-keys.sh` で作った）。金庫はふだん閉まっていて、検索リストにも入れない。`make dist`・`make publish` は `scripts/vault.sh` を通して、その場でパスワードを聞いて開け、開けている間だけ検索リストに入れ、終わったら（失敗しても）閉める。Xcode から直接 Release でビルドすると、金庫が検索リストにないので「No certificate matching …」で止まる（アドホック署名にはならない）
+- **配る版の署名**：配る版用の証明書と、更新ファイルの署名の鍵（Sparkle・アカウント名 `nexy-release`）は、作者の Mac の鍵付きのキーチェーン（金庫。`~/Library/Keychains/nexy-release.keychain-db`）に入っている（Pin シリーズで共通。Pinshelf の `scripts/create-nexy-keys.sh` で作った）。金庫はふだん閉まっていて、検索リストにも入れない。`make dist`・`make publish` は `scripts/vault.sh` を通して、その場でパスワードを聞いて開け、開けている間だけ検索リストに入れ、終わったら（失敗しても）閉める。パスワードを打てるターミナルから流したときだけ開け、AI の作業環境のようにターミナルのないところ（標準入力が端末でないとき）からは開けない。Xcode から直接 Release でビルドすると、金庫が検索リストにないので「No certificate matching …」で止まる（アドホック署名にはならない）
 - 証明書は名前ではなく指紋（SHA-1）で確かめる。`make dist` は、署名の前に金庫の証明書の指紋が `project.yml` の Release の `CODE_SIGN_IDENTITY`（Xcode もこの指紋で証明書を選ぶ）と合うか、署名のあとにアプリがその証明書で署名されたかを確かめる（`scripts/signing-check.sh`）
 - 証明書を替えると、入れてもらったアプリが別のアプリ扱いになり、許可を取り直すことになる。配る版用の証明書の控え（.p12）は、作者が Mac の外に保管している
 - 0.1.0 より前の β 版（ID `app.pinstage.Pinstage`、証明書 `Pinstage Dev` やアドホック署名）とは、ID が違うので別のアプリ。0.1.0 から出し直した（決まりの 15 の節）
